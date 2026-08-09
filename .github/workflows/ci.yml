@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Build, test, lint, proto, architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+          cache: false
+
+      - name: Install Go lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+
+      - name: Set up Buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: "1.47.2"
+
+      - name: Check architecture boundaries
+        run: sh scripts/check-architecture.sh
+
+      - name: Build and test Go modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' modules < <(find . -name go.mod -not -path './vendor/*' -print0)
+
+          if (( ${#modules[@]} == 0 )); then
+            echo "No Go modules found; skipping Go build and test."
+            exit 0
+          fi
+
+          for module_file in "${modules[@]}"; do
+            module_dir="$(dirname "$module_file")"
+            echo "::group::go build/test $module_dir"
+            (
+              cd "$module_dir"
+              go build ./...
+              go test ./...
+            )
+            echo "::endgroup::"
+          done
+
+      - name: Lint Go modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' modules < <(find . -name go.mod -not -path './vendor/*' -print0)
+
+          if (( ${#modules[@]} == 0 )); then
+            echo "No Go modules found; skipping Go lint."
+            exit 0
+          fi
+
+          for module_file in "${modules[@]}"; do
+            module_dir="$(dirname "$module_file")"
+            echo "::group::golangci-lint $module_dir"
+            (
+              cd "$module_dir"
+              golangci-lint run ./...
+            )
+            echo "::endgroup::"
+          done
+
+      - name: Validate protobuf contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f buf.yaml ]]; then
+            echo "No buf.yaml found; skipping protobuf validation."
+            exit 0
+          fi
+
+          buf lint
+          buf generate
+          git diff --exit-code
