@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package hotelbooking.smoke.v1;
 
-option go_package = "github.com/liemdang260/hotel-booking/gen/go/smoke/v1;smokev1";
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/smoke/v1;smokev1";
 
 service SmokeService {
   rpc Ping(PingRequest) returns (PingResponse);

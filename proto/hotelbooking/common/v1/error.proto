@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package hotelbooking.common.v1;
 
-option go_package = "github.com/liemdang260/hotel-booking/gen/go/common/v1;commonv1";
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/common/v1;commonv1";
 
 // ErrorDetail carries stable, machine-readable context in addition to the
 // canonical gRPC status code and human-readable status message.

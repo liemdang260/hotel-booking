@@ -2,7 +2,7 @@
 
 ## Layout and generation
 
-Source contracts live under `proto/<area>/v1`. Generated Go code lives only under `gen/go`; generated messages and stubs must not be placed in `internal/domain` or `internal/usecase`.
+Source contracts live under `proto/<package path>/v1`, and the directory must mirror the full Protobuf package name. For example, package `hotelbooking.booking.v1` lives under `proto/hotelbooking/booking/v1`. Generated Go code lives only under `gen/go`; generated messages and stubs must not be placed in `internal/domain` or `internal/usecase`.
 
 Run:
 
@@ -12,13 +12,13 @@ buf generate
 sh scripts/proto-smoke.sh
 ```
 
-`buf.gen.yaml` uses source-relative output, so `proto/smoke/v1/smoke.proto` generates into `gen/go/smoke/v1`.
+`buf.gen.yaml` uses source-relative output, so `proto/hotelbooking/smoke/v1/smoke.proto` generates into `gen/go/hotelbooking/smoke/v1`.
 
 ## Package and version naming
 
 - Proto packages use `hotelbooking.<area>.v1`.
-- Files are grouped under an explicit API major version directory such as `proto/booking/v1`.
-- Go package options point to `github.com/liemdang260/hotel-booking/gen/go/<area>/v1`.
+- File paths mirror package names, for example `proto/hotelbooking/booking/v1`.
+- Go package options point to `github.com/liemdang260/hotel-booking/gen/go/hotelbooking/<area>/v1`.
 - Backward-compatible changes stay within the current version. Breaking wire/API changes require a new version namespace.
 
 ## Clean Architecture boundary
@@ -37,8 +37,9 @@ Expected mappings include invalid input to `InvalidArgument`, missing resources 
 - Public entry points establish an explicit request deadline when the caller did not provide a suitable one.
 - Retry only transient failures and only when the operation is read-only or explicitly idempotent.
 - Do not automatically retry validation, authentication, authorization, or deterministic business errors.
-- Retried mutations require a stable idempotency key and bounded backoff; retries must never extend beyond the caller deadline.
+- Retried mutations require a stable idempotency key and bounded exponential backoff; retries must never extend beyond the caller deadline.
+- `Unavailable` is the default candidate for configured retries. Treat `DeadlineExceeded` on state-changing calls as ambiguous unless idempotency guarantees make replay safe.
 
 ## Smoke contract
 
-`proto/smoke/v1/smoke.proto` is intentionally minimal. The smoke script lints the workspace, regenerates Go output, and asserts that message, gRPC stub, and common error-detail files are produced in the isolated `gen/go` tree.
+`proto/hotelbooking/smoke/v1/smoke.proto` is intentionally minimal. The smoke script lints the workspace, regenerates Go output, and asserts that message, gRPC stub, and common error-detail files are produced in the isolated `gen/go` tree.
