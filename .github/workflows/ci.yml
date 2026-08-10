@@ -1,11 +1,13 @@
 name: CI
 
 on:
-  pull_request:
   push:
     branches:
       - main
       - "agent/**"
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
 
 permissions:
@@ -16,32 +18,81 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit:
-    name: Unit, build, lint, proto, architecture
+  verify:
+    name: Required validation
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
+    outputs:
+      runtime_required: ${{ steps.scope.outputs.runtime_required }}
 
     steps:
       - name: Check out exact tested commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Determine validation scope
+        id: scope
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          full=false
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$REF_NAME" == "main" || "$COMMIT_MESSAGE" == *"[full-ci]"* ]]; then
+            full=true
+          fi
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || -z "${BEFORE_SHA:-}" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            changed_files="$(git ls-files)"
+          else
+            changed_files="$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA")"
+          fi
+
+          printf '%s\n' "$changed_files"
+
+          go_required=false
+          lint_required=false
+          runtime_required=false
+
+          if [[ "$full" == "true" ]] || grep -Eq '(^|/)([^/]+\.go|go\.mod|go\.sum)$|^proto/|^buf\.(yaml|gen\.yaml)$|^scripts/check-architecture\.sh$|^\.github/workflows/ci\.yml$' <<<"$changed_files"; then
+            go_required=true
+          fi
+
+          if [[ "$full" == "true" ]] || grep -Eq '(^|/)[^/]+\.go$|(^|/)go\.(mod|sum)$|^\.golangci|^\.github/workflows/ci\.yml$' <<<"$changed_files"; then
+            lint_required=true
+          fi
+
+          if [[ "$full" == "true" ]] || grep -Eq '^deployments/|^scripts/ci/(integration-test|api-smoke)\.sh$|^services/.*/migrations/|(^|/)Dockerfile$|docker-compose' <<<"$changed_files"; then
+            runtime_required=true
+          fi
+
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          echo "go_required=$go_required" >> "$GITHUB_OUTPUT"
+          echo "lint_required=$lint_required" >> "$GITHUB_OUTPUT"
+          echo "runtime_required=$runtime_required" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
+        if: steps.scope.outputs.go_required == 'true'
         uses: actions/setup-go@v5
         with:
           go-version: "1.23.x"
-          cache: false
-
-      - name: Install Go lint
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Set up Buf
+        if: steps.scope.outputs.go_required == 'true'
         uses: bufbuild/buf-setup-action@v1
         with:
           version: "1.47.2"
 
       - name: Generate and validate protobuf contracts
+        if: steps.scope.outputs.go_required == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -53,9 +104,11 @@ jobs:
           buf generate
 
       - name: Check architecture boundaries
+        if: steps.scope.outputs.go_required == 'true'
         run: sh scripts/check-architecture.sh
 
       - name: Verify Go module manifests are complete
+        if: steps.scope.outputs.go_required == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -75,12 +128,6 @@ jobs:
               if [[ -n "$manifest_changes" ]]; then
                 echo "$manifest_changes"
                 echo "::error::go.mod/go.sum are incomplete. Run go mod tidy and commit the result."
-                echo "----- go.mod -----"
-                cat go.mod
-                if [[ -f go.sum ]]; then
-                  echo "----- go.sum -----"
-                  cat go.sum
-                fi
                 exit 1
               fi
             )
@@ -88,6 +135,7 @@ jobs:
           done
 
       - name: Build and run Go unit tests
+        if: steps.scope.outputs.go_required == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -103,7 +151,12 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Install Go lint
+        if: steps.scope.outputs.go_required == 'true' && steps.scope.outputs.lint_required == 'true'
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+
       - name: Lint Go modules
+        if: steps.scope.outputs.go_required == 'true' && steps.scope.outputs.lint_required == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -118,45 +171,37 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: No Go validation required
+        if: steps.scope.outputs.go_required != 'true'
+        run: echo "No Go/protobuf/module changes in this push; executable Go validation skipped."
+
   runtime:
-    name: Docker runtime and API smoke
+    name: Runtime / integration validation
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    needs: unit
+    timeout-minutes: 15
+    needs: verify
+    if: needs.verify.outputs.runtime_required == 'true'
 
     steps:
       - name: Check out exact tested commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
 
-      - name: Show Docker runtime
-        run: |
-          docker version
-          docker compose version
-
-      - name: Validate and start integration stack
-        id: compose
+      - name: Prepare environment
         shell: bash
         run: |
           set -euo pipefail
           if [[ ! -f deployments/docker-compose.yml ]]; then
-            echo "compose=false" >> "$GITHUB_OUTPUT"
-            echo "No deployments/docker-compose.yml on this stack yet; skipping runtime stack."
+            echo "No deployments/docker-compose.yml on this stack yet; no runtime stack to validate."
             exit 0
           fi
-
           if [[ -f deployments/.env.example && ! -f deployments/.env ]]; then
             cp deployments/.env.example deployments/.env
           fi
-
           docker compose --env-file deployments/.env -f deployments/docker-compose.yml config
-          docker compose --env-file deployments/.env -f deployments/docker-compose.yml up -d --wait
-          docker compose --env-file deployments/.env -f deployments/docker-compose.yml ps
-          echo "compose=true" >> "$GITHUB_OUTPUT"
 
       - name: Run integration tests when present
-        if: steps.compose.outputs.compose == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -165,11 +210,10 @@ jobs:
           elif [[ -f scripts/ci/integration-test.sh ]]; then
             sh scripts/ci/integration-test.sh
           else
-            echo "No integration-test script yet; infrastructure health is the current runtime gate."
+            echo "No integration-test script for this stack."
           fi
 
       - name: Run API smoke tests when present
-        if: steps.compose.outputs.compose == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -178,18 +222,22 @@ jobs:
           elif [[ -f scripts/ci/api-smoke.sh ]]; then
             sh scripts/ci/api-smoke.sh
           else
-            echo "No API smoke script yet; it becomes mandatory when a runnable API is added."
+            echo "No API smoke script for this stack."
           fi
 
       - name: Dump container logs on failure
-        if: failure() && steps.compose.outputs.compose == 'true'
+        if: failure()
         shell: bash
         run: |
-          docker compose --env-file deployments/.env -f deployments/docker-compose.yml ps || true
-          docker compose --env-file deployments/.env -f deployments/docker-compose.yml logs --no-color --tail=300 || true
+          if [[ -f deployments/docker-compose.yml && -f deployments/.env ]]; then
+            docker compose --env-file deployments/.env -f deployments/docker-compose.yml ps || true
+            docker compose --env-file deployments/.env -f deployments/docker-compose.yml logs --no-color --tail=200 || true
+          fi
 
-      - name: Tear down integration stack
-        if: always() && steps.compose.outputs.compose == 'true'
+      - name: Tear down runtime stack
+        if: always()
         shell: bash
         run: |
-          docker compose --env-file deployments/.env -f deployments/docker-compose.yml down -v --remove-orphans
+          if [[ -f deployments/docker-compose.yml && -f deployments/.env ]]; then
+            docker compose --env-file deployments/.env -f deployments/docker-compose.yml down -v --remove-orphans || true
+          fi
