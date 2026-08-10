@@ -22,8 +22,10 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - name: Check out repository
+      - name: Check out exact tested commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -69,8 +71,16 @@ jobs:
             (
               cd "$module_dir"
               go mod tidy
-              if ! git diff --exit-code -- go.mod go.sum; then
+              manifest_changes="$(git status --porcelain -- go.mod go.sum)"
+              if [[ -n "$manifest_changes" ]]; then
+                echo "$manifest_changes"
                 echo "::error::go.mod/go.sum are incomplete. Run go mod tidy and commit the result."
+                echo "----- go.mod -----"
+                cat go.mod
+                if [[ -f go.sum ]]; then
+                  echo "----- go.sum -----"
+                  cat go.sum
+                fi
                 exit 1
               fi
             )
@@ -115,8 +125,10 @@ jobs:
     needs: unit
 
     steps:
-      - name: Check out repository
+      - name: Check out exact tested commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Show Docker runtime
         run: |
