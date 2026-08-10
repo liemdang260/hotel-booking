@@ -9,7 +9,7 @@ import (
 	"github.com/liemdang260/hotel-booking/services/pricing/internal/repository"
 )
 
-var ErrQuoteNotFound = errors.New("quote not found")
+var ErrQuoteNotFound = repository.ErrQuoteNotFound
 
 type Clock interface {
 	Now() time.Time
