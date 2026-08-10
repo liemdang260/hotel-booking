@@ -24,8 +24,7 @@ CREATE TABLE payment_attempts (
     failure_code text NOT NULL DEFAULT '',
     raw_outcome text NOT NULL DEFAULT '',
     started_at timestamptz NOT NULL,
-    finished_at timestamptz,
-    CONSTRAINT payment_attempts_payment_id_idempotency_key UNIQUE (payment_id, idempotency_key)
+    finished_at timestamptz
 );
 
 CREATE INDEX payment_attempts_payment_started_idx
