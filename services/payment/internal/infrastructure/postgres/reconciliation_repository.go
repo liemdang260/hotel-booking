@@ -2,8 +2,6 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"time"
 
 	"github.com/liemdang260/hotel-booking/services/payment/internal/domain"
@@ -19,7 +17,8 @@ ON CONFLICT(payment_id) DO NOTHING`,paymentID,max,next,now)
 }
 func(r *PaymentRepository)ClaimDue(ctx context.Context,now,leaseUntil time.Time,limit int)([]repository.ReconciliationJob,error){
 	if limit<=0{return nil,nil}
-	rows,err:=r.db.QueryContext(ctx,`WITH due AS (
+	tx,err:=r.db.BeginTx(ctx,nil);if err!=nil{return nil,err};defer tx.Rollback()
+	rows,err:=tx.QueryContext(ctx,`WITH due AS (
  SELECT payment_id FROM payment_reconciliations
  WHERE status='PENDING' AND next_retry_at<=$1
  ORDER BY next_retry_at,payment_id
@@ -27,17 +26,26 @@ func(r *PaymentRepository)ClaimDue(ctx context.Context,now,leaseUntil time.Time,
 )
 UPDATE payment_reconciliations r SET status='CLAIMED',lease_until=$3,version=r.version+1,updated_at=$1
 FROM due WHERE r.payment_id=due.payment_id
-RETURNING r.payment_id,r.status,r.retry_count,r.max_attempts,r.next_retry_at,r.lease_until,r.last_error_code,r.version,r.created_at,r.updated_at`,now,limit,leaseUntil)
-	if err!=nil{return nil,err};defer rows.Close()
+RETURNING r.payment_id,
+ (SELECT p.idempotency_key FROM payments p WHERE p.id=r.payment_id),
+ (SELECT p.provider_reference FROM payments p WHERE p.id=r.payment_id),
+ r.status,r.retry_count,r.max_attempts,r.next_retry_at,r.lease_until,
+ r.last_error_code,r.version,r.created_at,r.updated_at`,now,limit,leaseUntil)
+	if err!=nil{return nil,err}
 	var jobs []repository.ReconciliationJob
 	for rows.Next(){
 		var j repository.ReconciliationJob
-		if err:=rows.Scan(&j.PaymentID,&j.Status,&j.RetryCount,&j.MaxAttempts,&j.NextRetryAt,&j.LeaseUntil,&j.LastErrorCode,&j.Version,&j.CreatedAt,&j.UpdatedAt);err!=nil{return nil,err}
-		p,err:=r.GetByID(ctx,j.PaymentID);if err!=nil{return nil,err}
-		j.IdempotencyKey=p.IdempotencyKey;j.ProviderReference=p.ProviderReference
+		if err:=rows.Scan(&j.PaymentID,&j.IdempotencyKey,&j.ProviderReference,&j.Status,
+			&j.RetryCount,&j.MaxAttempts,&j.NextRetryAt,&j.LeaseUntil,
+			&j.LastErrorCode,&j.Version,&j.CreatedAt,&j.UpdatedAt);err!=nil{
+			rows.Close();return nil,err
+		}
 		jobs=append(jobs,j)
 	}
-	return jobs,rows.Err()
+	if err:=rows.Err();err!=nil{rows.Close();return nil,err}
+	if err:=rows.Close();err!=nil{return nil,err}
+	if err:=tx.Commit();err!=nil{return nil,err}
+	return jobs,nil
 }
 func(r *PaymentRepository)Resolve(ctx context.Context,paymentID string,version int64,status domain.Status,providerRef,failure string,now time.Time)(domain.Payment,error){
 	if status!=domain.StatusSucceeded&&status!=domain.StatusFailed{return domain.Payment{},domain.ErrInvalidTransition}
@@ -59,5 +67,3 @@ func(r *PaymentRepository)Exhaust(ctx context.Context,paymentID string,version i
 }
 
 var _ repository.ReconciliationRepository=(*PaymentRepository)(nil)
-var _ = sql.ErrNoRows
-var _ = errors.Is
