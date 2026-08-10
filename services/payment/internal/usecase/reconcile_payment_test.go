@@ -22,7 +22,7 @@ type reconciliationMemory struct{
 	exhausted bool
 	next time.Time
 }
-func(r *reconciliationMemory)EnsurePending(context.Context,string,time.Time,int,time.Time)error{r.ensures++;return nil}
+func(r *reconciliationMemory)EnsurePending(context.Context,string,time.Time,int,time.Time)error{if !r.hasJob{r.hasJob=true;r.ensures++};return nil}
 func(r *reconciliationMemory)ClaimDue(context.Context,time.Time,time.Time,int)([]repository.ReconciliationJob,error){return nil,nil}
 func(r *reconciliationMemory)Resolve(_ context.Context,_ string,_ int64,s domain.Status,_ string,_ string,_ time.Time)(domain.Payment,error){r.resolved=s;return domain.Payment{ID:"pay-1",Status:s},nil}
 func(r *reconciliationMemory)Reschedule(_ context.Context,_ string,_ int64,_ int,next time.Time,_ string,_ time.Time)error{r.reschedules++;r.next=next;return nil}
@@ -65,7 +65,7 @@ func TestUnknownCreateReplayEnsuresOneLogicalJob(t *testing.T){
 	u:=NewCreatePaymentWithReconciliation(c,r,clock{time.Now()},5*time.Second,4)
 	if _,err:=u.Execute(context.Background(),CreatePaymentInput{});err!=nil{t.Fatal(err)}
 	if _,err:=u.Execute(context.Background(),CreatePaymentInput{});err!=nil{t.Fatal(err)}
-	if c.calls!=2||r.ensures!=2{t.Fatalf("calls=%d ensures=%d",c.calls,r.ensures)}
+	if c.calls!=2||r.ensures!=1{t.Fatalf("calls=%d logical_jobs=%d",c.calls,r.ensures)}
 	// EnsurePending is repository-idempotent; repeated CreatePayment cannot create a second logical job.
 }
 func TestBackoffRejectsUnboundedAttempt(t *testing.T){
