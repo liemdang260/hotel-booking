@@ -33,6 +33,7 @@ type PaymentRepository interface {
 		string,
 		string,
 		string,
+		string,
 		time.Time,
 	) (domain.Payment, error)
 }
