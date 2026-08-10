@@ -39,20 +39,49 @@ jobs:
         with:
           version: "1.47.2"
 
+      - name: Generate and validate protobuf contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f buf.yaml ]]; then
+            echo "No buf.yaml found; protobuf validation not active on this stack yet."
+            exit 0
+          fi
+          buf lint
+          buf generate
+
       - name: Check architecture boundaries
         run: sh scripts/check-architecture.sh
+
+      - name: Verify Go module manifests are complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' modules < <(find . -name go.mod -not -path './vendor/*' -print0)
+          if (( ${#modules[@]} == 0 )); then
+            echo "::error::No Go modules found. Agent branches must include their prerequisite stack before validation."
+            exit 1
+          fi
+
+          for module_file in "${modules[@]}"; do
+            module_dir="$(dirname "$module_file")"
+            echo "::group::go mod tidy check $module_dir"
+            (
+              cd "$module_dir"
+              go mod tidy
+              if ! git diff --exit-code -- go.mod go.sum; then
+                echo "::error::go.mod/go.sum are incomplete. Run go mod tidy and commit the result."
+                exit 1
+              fi
+            )
+            echo "::endgroup::"
+          done
 
       - name: Build and run Go unit tests
         shell: bash
         run: |
           set -euo pipefail
           mapfile -d '' modules < <(find . -name go.mod -not -path './vendor/*' -print0)
-
-          if (( ${#modules[@]} == 0 )); then
-            echo "::error::No Go modules found. Agent branches must include their prerequisite stack before validation."
-            exit 1
-          fi
-
           for module_file in "${modules[@]}"; do
             module_dir="$(dirname "$module_file")"
             echo "::group::go verify $module_dir"
@@ -78,18 +107,6 @@ jobs:
             )
             echo "::endgroup::"
           done
-
-      - name: Validate protobuf contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ ! -f buf.yaml ]]; then
-            echo "No buf.yaml found; protobuf validation not active on this stack yet."
-            exit 0
-          fi
-          buf lint
-          buf generate
-          git diff --exit-code
 
   runtime:
     name: Docker runtime and API smoke
