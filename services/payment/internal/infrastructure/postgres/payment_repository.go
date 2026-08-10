@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/liemdang260/hotel-booking/services/payment/internal/domain"
@@ -53,8 +54,17 @@ func (r *PaymentRepository) CompleteAttempt(ctx context.Context,paymentID,attemp
 	p,err:=scanPayment(tx.QueryRowContext(ctx,"SELECT "+paymentColumns+" FROM payments WHERE id=$1",paymentID));if err!=nil{return domain.Payment{},err}
 	if err=tx.Commit();err!=nil{return domain.Payment{},err};return p,nil
 }
+
+type sqlStateError interface { SQLState() string }
 func mapWriteError(err error) error {
-	// Concrete adapters should inspect the driver's SQLSTATE 23505 constraint name.
-	// Keep database/driver types out of inner layers; this fallback preserves wrapping.
+	var state sqlStateError
+	if errors.As(err,&state)&&state.SQLState()=="23505" {
+		switch {
+		case strings.Contains(err.Error(),"payments_idempotency_key_key"):
+			return repository.ErrIdempotencyConflict
+		case strings.Contains(err.Error(),"payments_booking_id_key"):
+			return repository.ErrBookingConflict
+		}
+	}
 	return fmt.Errorf("create payment: %w",err)
 }
