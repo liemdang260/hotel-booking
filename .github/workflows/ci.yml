@@ -1,0 +1,166 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "agent/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit, build, lint, proto, architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+          cache: false
+
+      - name: Install Go lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+
+      - name: Set up Buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: "1.47.2"
+
+      - name: Check architecture boundaries
+        run: sh scripts/check-architecture.sh
+
+      - name: Build and run Go unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' modules < <(find . -name go.mod -not -path './vendor/*' -print0)
+
+          if (( ${#modules[@]} == 0 )); then
+            echo "::error::No Go modules found. Agent branches must include their prerequisite stack before validation."
+            exit 1
+          fi
+
+          for module_file in "${modules[@]}"; do
+            module_dir="$(dirname "$module_file")"
+            echo "::group::go verify $module_dir"
+            (
+              cd "$module_dir"
+              go build ./...
+              go test -count=1 ./...
+            )
+            echo "::endgroup::"
+          done
+
+      - name: Lint Go modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' modules < <(find . -name go.mod -not -path './vendor/*' -print0)
+          for module_file in "${modules[@]}"; do
+            module_dir="$(dirname "$module_file")"
+            echo "::group::golangci-lint $module_dir"
+            (
+              cd "$module_dir"
+              golangci-lint run ./...
+            )
+            echo "::endgroup::"
+          done
+
+      - name: Validate protobuf contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f buf.yaml ]]; then
+            echo "No buf.yaml found; protobuf validation not active on this stack yet."
+            exit 0
+          fi
+          buf lint
+          buf generate
+          git diff --exit-code
+
+  runtime:
+    name: Docker runtime and API smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: unit
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Docker runtime
+        run: |
+          docker version
+          docker compose version
+
+      - name: Validate and start integration stack
+        id: compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f deployments/docker-compose.yml ]]; then
+            echo "compose=false" >> "$GITHUB_OUTPUT"
+            echo "No deployments/docker-compose.yml on this stack yet; skipping runtime stack."
+            exit 0
+          fi
+
+          if [[ -f deployments/.env.example && ! -f deployments/.env ]]; then
+            cp deployments/.env.example deployments/.env
+          fi
+
+          docker compose --env-file deployments/.env -f deployments/docker-compose.yml config
+          docker compose --env-file deployments/.env -f deployments/docker-compose.yml up -d --wait
+          docker compose --env-file deployments/.env -f deployments/docker-compose.yml ps
+          echo "compose=true" >> "$GITHUB_OUTPUT"
+
+      - name: Run integration tests when present
+        if: steps.compose.outputs.compose == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -x scripts/ci/integration-test.sh ]]; then
+            scripts/ci/integration-test.sh
+          elif [[ -f scripts/ci/integration-test.sh ]]; then
+            sh scripts/ci/integration-test.sh
+          else
+            echo "No integration-test script yet; infrastructure health is the current runtime gate."
+          fi
+
+      - name: Run API smoke tests when present
+        if: steps.compose.outputs.compose == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -x scripts/ci/api-smoke.sh ]]; then
+            scripts/ci/api-smoke.sh
+          elif [[ -f scripts/ci/api-smoke.sh ]]; then
+            sh scripts/ci/api-smoke.sh
+          else
+            echo "No API smoke script yet; it becomes mandatory when a runnable API is added."
+          fi
+
+      - name: Dump container logs on failure
+        if: failure() && steps.compose.outputs.compose == 'true'
+        shell: bash
+        run: |
+          docker compose --env-file deployments/.env -f deployments/docker-compose.yml ps || true
+          docker compose --env-file deployments/.env -f deployments/docker-compose.yml logs --no-color --tail=300 || true
+
+      - name: Tear down integration stack
+        if: always() && steps.compose.outputs.compose == 'true'
+        shell: bash
+        run: |
+          docker compose --env-file deployments/.env -f deployments/docker-compose.yml down -v --remove-orphans
