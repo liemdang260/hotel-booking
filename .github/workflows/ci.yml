@@ -8,18 +8,21 @@ on:
     paths-ignore:
       - "docs/**"
       - "**/*.md"
+  pull_request_review:
+    types: [submitted]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
     name: Required validation
+    if: github.event_name != 'pull_request_review' || github.event.review.state == 'approved'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -29,7 +32,7 @@ jobs:
       - name: Check out exact tested commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - name: Determine validation scope
@@ -37,21 +40,20 @@ jobs:
         shell: bash
         env:
           BEFORE_SHA: ${{ github.event.before }}
-          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
+          REVIEW_STATE: ${{ github.event.review.state }}
         run: |
           set -euo pipefail
 
           full=false
-          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$REF_NAME" == "main" || "$COMMIT_MESSAGE" == *"[full-ci]"* ]]; then
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || ( "$EVENT_NAME" == "pull_request_review" && "$REVIEW_STATE" == "approved" ) ]]; then
             full=true
           fi
 
-          if [[ "$EVENT_NAME" == "workflow_dispatch" || -z "${BEFORE_SHA:-}" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+          if [[ "$full" == "true" || -z "${BEFORE_SHA:-}" || "$BEFORE_SHA" =~ ^0+$ ]]; then
             changed_files="$(git ls-files)"
           else
-            changed_files="$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA")"
+            changed_files="$(git diff --name-only "$BEFORE_SHA" "${{ github.event.pull_request.head.sha || github.sha }}")"
           fi
 
           printf '%s\n' "$changed_files"
@@ -186,7 +188,7 @@ jobs:
       - name: Check out exact tested commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Prepare environment
         shell: bash
