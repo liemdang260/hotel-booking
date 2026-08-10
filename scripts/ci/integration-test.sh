@@ -30,6 +30,11 @@ compose() {
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
+cleanup() {
+  compose down -v --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
 psql_in_postgres() {
   compose exec -T postgres \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 "$@"
@@ -48,6 +53,7 @@ done
 
 echo "Starting PostgreSQL only for Availability migration validation"
 compose up -d --wait postgres
+compose ps postgres
 
 echo "Applying Availability migration"
 psql_in_postgres < "$UP"
