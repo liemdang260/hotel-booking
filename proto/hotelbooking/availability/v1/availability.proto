@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package hotelbooking.availability.v1;
+
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/availability/v1;availabilityv1";
+
+service AvailabilityService {
+  rpc CheckAvailability(CheckAvailabilityRequest) returns (CheckAvailabilityResponse);
+  rpc ReserveInventory(ReserveInventoryRequest) returns (ReservationResponse);
+  rpc ConfirmReservation(ConfirmReservationRequest) returns (ReservationResponse);
+  rpc ReleaseReservation(ReleaseReservationRequest) returns (ReservationResponse);
+}
+
+message CheckAvailabilityRequest {
+  string hotel_id = 1;
+  string room_type_id = 2;
+  string check_in = 3;
+  string check_out = 4;
+  int32 quantity = 5;
+}
+
+message CheckAvailabilityResponse {
+  bool available = 1;
+  int32 available_quantity = 2;
+}
+
+message ReserveInventoryRequest {
+  string booking_id = 1;
+  string hotel_id = 2;
+  string room_type_id = 3;
+  string check_in = 4;
+  string check_out = 5;
+  int32 quantity = 6;
+  int64 hold_ttl_seconds = 7;
+}
+
+message ConfirmReservationRequest {
+  string reservation_id = 1;
+}
+
+message ReleaseReservationRequest {
+  string reservation_id = 1;
+}
+
+message ReservationResponse {
+  string reservation_id = 1;
+  string status = 2;
+  string expires_at = 3;
+}
