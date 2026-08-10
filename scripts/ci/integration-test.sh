@@ -9,18 +9,29 @@ if [ ! -f "$COMPOSE_FILE" ]; then
   exit 1
 fi
 
-if [ -f "$ENV_FILE" ]; then
-  set -a
-  # shellcheck disable=SC1090
-  . "$ENV_FILE"
-  set +a
+if [ ! -f "$ENV_FILE" ]; then
+  if [ -f deployments/.env.example ]; then
+    cp deployments/.env.example "$ENV_FILE"
+  else
+    echo "Missing $ENV_FILE and deployments/.env.example" >&2
+    exit 1
+  fi
 fi
+
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
 
 POSTGRES_USER="${POSTGRES_USER:-hotel}"
 POSTGRES_DB="${POSTGRES_DB:-hotel_booking}"
 
+compose() {
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
 psql_in_postgres() {
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres \
+  compose exec -T postgres \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 "$@"
 }
 
@@ -34,6 +45,9 @@ for file in "$UP" "$VERIFY" "$DOWN"; do
     exit 1
   fi
 done
+
+echo "Starting PostgreSQL only for Availability migration validation"
+compose up -d --wait postgres
 
 echo "Applying Availability migration"
 psql_in_postgres < "$UP"
