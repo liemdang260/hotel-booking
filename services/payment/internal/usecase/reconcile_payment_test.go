@@ -16,6 +16,7 @@ func(l *lookup)GetPayment(context.Context,provider.LookupRequest)provider.Lookup
 
 type reconciliationMemory struct{
 	ensures int
+	hasJob bool
 	resolved domain.Status
 	reschedules int
 	exhausted bool
