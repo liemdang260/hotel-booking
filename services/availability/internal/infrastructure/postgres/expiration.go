@@ -28,8 +28,8 @@ FROM reservations
 WHERE status = 'HELD'
   AND expires_at <= $1
 ORDER BY expires_at, id
-FOR UPDATE SKIP LOCKED
-LIMIT $2`
+LIMIT $2
+FOR UPDATE SKIP LOCKED`
 
 type ExpirationStore struct {
 	queries queryer
