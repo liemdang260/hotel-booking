@@ -20,7 +20,8 @@ func(r *PaymentRepository)ClaimDue(ctx context.Context,now,leaseUntil time.Time,
 	tx,err:=r.db.BeginTx(ctx,nil);if err!=nil{return nil,err};defer tx.Rollback()
 	rows,err:=tx.QueryContext(ctx,`WITH due AS (
  SELECT payment_id FROM payment_reconciliations
- WHERE status='PENDING' AND next_retry_at<=$1
+ WHERE (status='PENDING' AND next_retry_at<=$1)
+    OR (status='CLAIMED' AND lease_until<=$1)
  ORDER BY next_retry_at,payment_id
  LIMIT $2 FOR UPDATE SKIP LOCKED
 )
