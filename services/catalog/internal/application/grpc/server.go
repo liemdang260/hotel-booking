@@ -100,6 +100,10 @@ func mapRoomType(room domain.RoomType) *catalogv1.RoomType {
 
 func mapError(err error) error {
 	switch {
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, "catalog operation canceled")
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, "catalog operation deadline exceeded")
 	case errors.Is(err, domain.ErrInvalidCatalogID), errors.Is(err, domain.ErrInvalidSearch):
 		return status.Error(codes.InvalidArgument, "invalid catalog request")
 	case errors.Is(err, repository.ErrNotFound):
