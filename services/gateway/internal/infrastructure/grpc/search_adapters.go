@@ -6,7 +6,7 @@ import (
 
 	catalogv1 "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/catalog/v1"
 	availabilityv1 "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/availability/v1"
-	pricingv1 "github.com/liemdang260/hotel-booking/gen/pricing/v1"
+	pricingv1 "github.com/liemdang260/hotel-booking/gen/go/pricing/v1"
 	"github.com/liemdang260/hotel-booking/services/gateway/internal/domain"
 	"github.com/liemdang260/hotel-booking/services/gateway/internal/domain/repository"
 )
