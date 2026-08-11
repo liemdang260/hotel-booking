@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/liemdang260/hotel-booking/services/booking/internal/domain"
+	"github.com/liemdang260/hotel-booking/services/booking/internal/usecase"
 )
 
 func TestIntegrationCancellationStateAndBookingCancelledOutboxCommitAtomically(t *testing.T){
@@ -34,6 +35,12 @@ VALUES($1,$2,$3,$4,$5,$6,'PENDING',$7)`,event.ID,event.AggregateType,event.Aggre
 	if err=db.QueryRowContext(ctx,`SELECT status FROM bookings WHERE id='00000000-0000-0000-0000-000000009001'`).Scan(&status);err!=nil{t.Fatal(err)}
 	if err=db.QueryRowContext(ctx,`SELECT count(*) FROM booking_outbox_events WHERE aggregate_id='00000000-0000-0000-0000-000000009001' AND event_type='BookingCancelled'`).Scan(&events);err!=nil{t.Fatal(err)}
 	if status!="CANCELLED"||events!=1{t.Fatalf("status=%s events=%d",status,events)}
+	store:=NewCancellationStore(db)
+	completed,err:=store.MarkRefund(ctx,"00000000-0000-0000-0000-000000009002",2,usecase.CancellationRefund{ID:"refund-1",Status:usecase.RefundSucceeded})
+	if err!=nil{t.Fatal(err)};if completed.State!=domain.CancellationCompleted{t.Fatalf("refund state=%s",completed.State)}
+	var refundEvents int
+	if err=db.QueryRowContext(ctx,`SELECT count(*) FROM booking_outbox_events WHERE aggregate_id='00000000-0000-0000-0000-000000009001' AND event_type='BookingRefundCompleted'`).Scan(&refundEvents);err!=nil{t.Fatal(err)}
+	if refundEvents!=1{t.Fatalf("refund completion events=%d",refundEvents)}
 	_,err=db.ExecContext(ctx,`INSERT INTO booking_cancellations(booking_id,idempotency_key,request_hash,state,reason,policy_evaluated_at,refund_amount_minor,currency)
 VALUES('00000000-0000-0000-0000-000000009001','cancel-2',repeat('b',64),'POLICY_APPROVED','OTHER',$1,10000,'USD')`,now)
 	if err==nil{t.Fatal("second active cancellation must violate unique invariant")}
