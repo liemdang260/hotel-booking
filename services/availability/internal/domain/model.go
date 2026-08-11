@@ -27,10 +27,11 @@ func (i Inventory) AvailableQuantity() int {
 type ReservationStatus string
 
 const (
-	ReservationHeld     ReservationStatus = "HELD"
-	ReservationBooked   ReservationStatus = "BOOKED"
-	ReservationReleased ReservationStatus = "RELEASED"
-	ReservationExpired  ReservationStatus = "EXPIRED"
+	ReservationHeld      ReservationStatus = "HELD"
+	ReservationBooked    ReservationStatus = "BOOKED"
+	ReservationReleased  ReservationStatus = "RELEASED"
+	ReservationExpired   ReservationStatus = "EXPIRED"
+	ReservationCancelled ReservationStatus = "CANCELLED"
 )
 
 type Reservation struct {

@@ -24,6 +24,8 @@ psql_in_postgres(){ compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTG
 AVAILABILITY_UP="services/availability/migrations/000001_create_availability_schema.up.sql"
 AVAILABILITY_VERIFY="services/availability/migrations/000001_create_availability_schema_test.sql"
 AVAILABILITY_DOWN="services/availability/migrations/000001_create_availability_schema.down.sql"
+AVAILABILITY_CANCELLATION_UP="services/availability/migrations/000002_add_booked_reservation_cancellation.up.sql"
+AVAILABILITY_CANCELLATION_DOWN="services/availability/migrations/000002_add_booked_reservation_cancellation.down.sql"
 BOOKING_UP="services/booking/migrations/000001_create_booking_schema.up.sql"
 BOOKING_DOWN="services/booking/migrations/000001_create_booking_schema.down.sql"
 BOOKING_POLICY_UP="services/booking/migrations/000002_create_cancellation_policy_snapshots.up.sql"
@@ -38,7 +40,7 @@ PAYMENT_RECON_UP="services/payment/migrations/000002_create_payment_reconciliati
 PAYMENT_RECON_DOWN="services/payment/migrations/000002_create_payment_reconciliations.down.sql"
 
 for file in "$AVAILABILITY_UP" "$AVAILABILITY_VERIFY" "$AVAILABILITY_DOWN"; do [ -f "$file" ] || { echo "Missing migration test input: $file" >&2; exit 1; }; done
-for pair in "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN"; do
+for pair in "Availability booked cancellation:$AVAILABILITY_CANCELLATION_UP:$AVAILABILITY_CANCELLATION_DOWN" "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN"; do
   name="${pair%%:*}"; rest="${pair#*:}"; up="${rest%%:*}"; down="${rest#*:}"
   if [ -f "$up" ] || [ -f "$down" ]; then [ -f "$up" ] && [ -f "$down" ] || { echo "Incomplete $name migration pair" >&2; exit 1; }; fi
 done
@@ -55,9 +57,12 @@ export PRICING_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
 export PAYMENT_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
 
 echo "Applying Availability migration"; psql_in_postgres < "$AVAILABILITY_UP"
+echo "Applying Availability booked-cancellation migration"; psql_in_postgres < "$AVAILABILITY_CANCELLATION_UP"
 echo "Executing Availability schema verification"; psql_in_postgres < "$AVAILABILITY_VERIFY"
 echo "Running Availability repository integration tests"; go test -count=1 -tags=integration ./services/availability/internal/infrastructure/postgres -run '^TestIntegration'
 if [ -d services/availability/internal/integration ]; then echo "Running Availability concurrency and idempotency integration tests"; go test -count=1 -tags=integration ./services/availability/internal/integration; fi
+echo "Clearing Availability test data before migration rollback"; psql_in_postgres -c "TRUNCATE availability_outbox_events, reservation_inventory, reservations, room_inventory CASCADE"
+echo "Rolling back Availability booked-cancellation migration"; psql_in_postgres < "$AVAILABILITY_CANCELLATION_DOWN"
 echo "Rolling back Availability migration"; psql_in_postgres < "$AVAILABILITY_DOWN"
 availability_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('room_inventory','reservations','reservation_inventory','availability_outbox_events');")"
 [ "$availability_remaining" = "0" ] || { echo "Availability rollback left $availability_remaining tables" >&2; exit 1; }

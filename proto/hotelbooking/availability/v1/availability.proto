@@ -9,6 +9,7 @@ service AvailabilityService {
   rpc ReserveInventory(ReserveInventoryRequest) returns (ReserveInventoryResponse);
   rpc ConfirmReservation(ConfirmReservationRequest) returns (ConfirmReservationResponse);
   rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseReservationResponse);
+  rpc CancelBookedReservation(CancelBookedReservationRequest) returns (CancelBookedReservationResponse);
 }
 
 message CheckAvailabilityRequest {
@@ -40,22 +41,22 @@ message ReserveInventoryResponse {
   string expires_at = 3;
 }
 
-message ConfirmReservationRequest {
-  string reservation_id = 1;
-}
-
+message ConfirmReservationRequest { string reservation_id = 1; }
 message ConfirmReservationResponse {
   string reservation_id = 1;
   string status = 2;
   string expires_at = 3;
 }
 
-message ReleaseReservationRequest {
-  string reservation_id = 1;
-}
-
+message ReleaseReservationRequest { string reservation_id = 1; }
 message ReleaseReservationResponse {
   string reservation_id = 1;
   string status = 2;
   string expires_at = 3;
+}
+
+message CancelBookedReservationRequest { string reservation_id = 1; }
+message CancelBookedReservationResponse {
+  string reservation_id = 1;
+  string status = 2;
 }

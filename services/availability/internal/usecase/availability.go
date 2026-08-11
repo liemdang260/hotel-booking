@@ -174,6 +174,66 @@ func (s *Service) ReleaseReservation(ctx context.Context, reservationID domain.R
 	return s.transition(ctx, reservationID, domain.ReservationReleased)
 }
 
+// CancelBookedReservation is deliberately separate from ReleaseReservation:
+// BOOKED cancellation returns booked inventory, while release only removes a HELD hold.
+func (s *Service) CancelBookedReservation(ctx context.Context, reservationID domain.ReservationID) (ReservationResult, error) {
+	if reservationID == "" {
+		return ReservationResult{}, ErrInvalidRequest
+	}
+
+	var result ReservationResult
+	err := s.transactions.Execute(ctx, func(ctx context.Context, repos repository.Repositories) error {
+		reservation, err := repos.Reservation.LockByID(ctx, reservationID)
+		if err != nil {
+			return fmt.Errorf("lock booked reservation: %w", err)
+		}
+		if reservation.Status == domain.ReservationCancelled {
+			result = reservationResult(reservation)
+			return nil
+		}
+		if reservation.Status != domain.ReservationBooked {
+			return ErrInvalidTransition
+		}
+
+		inventory, err := repos.Inventory.LockRange(
+			ctx,
+			reservation.HotelID,
+			reservation.RoomTypeID,
+			reservation.CheckIn,
+			reservation.CheckOut,
+		)
+		if err != nil {
+			return fmt.Errorf("lock booked reservation inventory: %w", err)
+		}
+		if _, err := minimumAvailability(inventory, reservation.CheckIn, reservation.CheckOut); err != nil {
+			return err
+		}
+		for i := range inventory {
+			if inventory[i].BookedQuantity < reservation.Quantity {
+				return ErrInvalidTransition
+			}
+			inventory[i].BookedQuantity -= reservation.Quantity
+			if err := repos.Inventory.SaveInventory(ctx, &inventory[i]); err != nil {
+				return fmt.Errorf(
+					"save booked cancellation inventory date %s: %w",
+					inventory[i].Date.Format(time.DateOnly),
+					err,
+				)
+			}
+		}
+
+		reservation.Status = domain.ReservationCancelled
+		reservation.ExpiresAt = nil
+		reservation.UpdatedAt = s.clock.Now().UTC()
+		if err := repos.Reservation.SaveReservation(ctx, *reservation); err != nil {
+			return fmt.Errorf("save booked reservation cancellation: %w", err)
+		}
+		result = reservationResult(reservation)
+		return nil
+	})
+	return result, err
+}
+
 func (s *Service) transition(ctx context.Context, reservationID domain.ReservationID, target domain.ReservationStatus) (ReservationResult, error) {
 	if reservationID == "" {
 		return ReservationResult{}, ErrInvalidRequest
@@ -273,3 +333,4 @@ func reservationResult(reservation *domain.Reservation) ReservationResult {
 		ExpiresAt: reservation.ExpiresAt,
 	}
 }
+
