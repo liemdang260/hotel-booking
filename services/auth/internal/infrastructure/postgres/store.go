@@ -35,10 +35,10 @@ func(s *Store)FindByHash(ctx context.Context,h string)(domain.RefreshToken,error
 }
 func(s *Store)Rotate(ctx context.Context,oldID string,next domain.RefreshToken,now time.Time)error{
 	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return err};defer func(){_=tx.Rollback()}()
-	res,err:=tx.ExecContext(ctx,`UPDATE auth_refresh_tokens SET revoked_at=$2,rotated_to=$3 WHERE id=$1 AND revoked_at IS NULL AND rotated_to IS NULL AND expires_at>$2`,oldID,now,next.ID)
-	if err!=nil{return err};n,err:=res.RowsAffected();if err!=nil{return err};if n!=1{return domain.ErrRefreshTokenReuse}
 	_,err=tx.ExecContext(ctx,`INSERT INTO auth_refresh_tokens(id,user_id,family_id,token_hash,expires_at,rotated_from,created_at)VALUES($1,$2,$3,$4,$5,$6,$7)`,next.ID,next.UserID,next.FamilyID,next.TokenHash,next.ExpiresAt,oldID,next.CreatedAt)
-	if err!=nil{return err};return tx.Commit()
+	if err!=nil{return err}
+	res,err:=tx.ExecContext(ctx,`UPDATE auth_refresh_tokens SET revoked_at=$2,rotated_to=$3 WHERE id=$1 AND revoked_at IS NULL AND rotated_to IS NULL AND expires_at>$2`,oldID,now,next.ID)
+	if err!=nil{return err};n,err:=res.RowsAffected();if err!=nil{return err};if n!=1{return domain.ErrRefreshTokenReuse};return tx.Commit()
 }
 func(s *Store)Revoke(ctx context.Context,id string,now time.Time)error{
 	_,err:=s.db.ExecContext(ctx,`UPDATE auth_refresh_tokens SET revoked_at=COALESCE(revoked_at,$2) WHERE id=$1`,id,now);return err
