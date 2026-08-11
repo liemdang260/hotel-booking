@@ -36,7 +36,7 @@ func openPaymentIntegrationDB(t *testing.T) *sql.DB {
 
 func resetPaymentFixture(t *testing.T, db *sql.DB) {
 	t.Helper()
-	if _, err := db.Exec(`TRUNCATE TABLE payment_attempts, payments CASCADE`); err != nil {
+	if _, err := db.Exec(`TRUNCATE TABLE payment_reconciliations, payment_attempts, payments CASCADE`); err != nil {
 		t.Fatalf("reset payment fixture: %v", err)
 	}
 }
@@ -114,5 +114,93 @@ func TestIntegrationPaymentAttemptTransitionIsAtomicAndAuditable(t *testing.T) {
 	}
 	if outcome != string(domain.AttemptUnknown) || requestRef != "request-1" || providerRef != "provider-1" || failure != "TIMEOUT" || raw == "" || !finished.Valid {
 		t.Fatalf("attempt audit outcome=%s request=%s provider=%s failure=%s raw=%q finished=%v", outcome, requestRef, providerRef, failure, raw, finished.Valid)
+	}
+}
+
+func TestIntegrationReconciliationQueueIsIdempotentAndReclaimable(t *testing.T) {
+	db := openPaymentIntegrationDB(t)
+	resetPaymentFixture(t, db)
+	repo := NewPaymentRepository(db)
+	ctx := context.Background()
+
+	p := newIntegrationPayment(t, "payment-1", "booking-1", "idem-1")
+	p.Status = domain.StatusUnknown
+	p.ProviderReference = "provider-1"
+	if _, err := repo.Create(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+
+	now := p.CreatedAt.Add(time.Minute)
+	if err := repo.EnsurePending(ctx, p.ID, now, 3, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.EnsurePending(ctx, p.ID, now.Add(time.Hour), 9, now); err != nil {
+		t.Fatal(err)
+	}
+
+	var count, maxAttempts int
+	if err := db.QueryRow(`SELECT count(*), max(max_attempts) FROM payment_reconciliations WHERE payment_id=$1`, p.ID).Scan(&count, &maxAttempts); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || maxAttempts != 3 {
+		t.Fatalf("count=%d max_attempts=%d, want 1 and original max=3", count, maxAttempts)
+	}
+
+	leaseUntil := now.Add(time.Minute)
+	jobs, err := repo.ClaimDue(ctx, now, leaseUntil, 1)
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("claim jobs=%d err=%v", len(jobs), err)
+	}
+	if jobs[0].Status != repository.ReconciliationClaimed || jobs[0].Version != 2 || jobs[0].IdempotencyKey != "idem-1" {
+		t.Fatalf("unexpected claimed job: %+v", jobs[0])
+	}
+
+	jobs, err = repo.ClaimDue(ctx, now.Add(30*time.Second), now.Add(90*time.Second), 1)
+	if err != nil || len(jobs) != 0 {
+		t.Fatalf("unexpired lease should not reclaim: jobs=%d err=%v", len(jobs), err)
+	}
+
+	jobs, err = repo.ClaimDue(ctx, leaseUntil, leaseUntil.Add(time.Minute), 1)
+	if err != nil || len(jobs) != 1 || jobs[0].Version != 3 {
+		t.Fatalf("expired lease reclaim jobs=%+v err=%v", jobs, err)
+	}
+}
+
+func TestIntegrationReconciliationResolveIsAtomic(t *testing.T) {
+	db := openPaymentIntegrationDB(t)
+	resetPaymentFixture(t, db)
+	repo := NewPaymentRepository(db)
+	ctx := context.Background()
+
+	p := newIntegrationPayment(t, "payment-1", "booking-1", "idem-1")
+	p.Status = domain.StatusUnknown
+	if _, err := repo.Create(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+
+	now := p.CreatedAt.Add(time.Minute)
+	if err := repo.EnsurePending(ctx, p.ID, now, 3, now); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := repo.ClaimDue(ctx, now, now.Add(time.Minute), 1)
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("claim jobs=%d err=%v", len(jobs), err)
+	}
+
+	resolved, err := repo.Resolve(ctx, p.ID, jobs[0].Version, domain.StatusSucceeded, "provider-success", "", now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if resolved.Status != domain.StatusSucceeded || resolved.ProviderReference != "provider-success" {
+		t.Fatalf("resolved payment=%+v", resolved)
+	}
+
+	var status string
+	var lease sql.NullTime
+	if err := db.QueryRow(`SELECT status, lease_until FROM payment_reconciliations WHERE payment_id=$1`, p.ID).Scan(&status, &lease); err != nil {
+		t.Fatal(err)
+	}
+	if status != string(repository.ReconciliationResolved) || lease.Valid {
+		t.Fatalf("reconciliation status=%s lease_valid=%v", status, lease.Valid)
 	}
 }

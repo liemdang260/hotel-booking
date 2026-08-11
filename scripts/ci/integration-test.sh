@@ -51,6 +51,8 @@ PRICING_UP="services/pricing/migrations/000001_create_quotes.up.sql"
 PRICING_DOWN="services/pricing/migrations/000001_create_quotes.down.sql"
 PAYMENT_UP="services/payment/migrations/000001_create_payments.up.sql"
 PAYMENT_DOWN="services/payment/migrations/000001_create_payments.down.sql"
+PAYMENT_RECON_UP="services/payment/migrations/000002_create_payment_reconciliations.up.sql"
+PAYMENT_RECON_DOWN="services/payment/migrations/000002_create_payment_reconciliations.down.sql"
 
 for file in "$AVAILABILITY_UP" "$AVAILABILITY_VERIFY" "$AVAILABILITY_DOWN"; do
   if [ ! -f "$file" ]; then
@@ -59,7 +61,7 @@ for file in "$AVAILABILITY_UP" "$AVAILABILITY_VERIFY" "$AVAILABILITY_DOWN"; do
   fi
 done
 
-for pair in "Booking:$BOOKING_UP:$BOOKING_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN"; do
+for pair in "Booking:$BOOKING_UP:$BOOKING_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN"; do
   name="${pair%%:*}"
   rest="${pair#*:}"
   up="${rest%%:*}"
@@ -71,6 +73,11 @@ for pair in "Booking:$BOOKING_UP:$BOOKING_DOWN" "Pricing:$PRICING_UP:$PRICING_DO
     fi
   fi
 done
+
+if [ -f "$PAYMENT_RECON_UP" ] && [ ! -f "$PAYMENT_UP" ]; then
+  echo "Payment reconciliation migration requires base Payment migration" >&2
+  exit 1
+fi
 
 echo "Starting PostgreSQL only for integration validation"
 compose up -d --wait postgres
@@ -128,11 +135,22 @@ fi
 if [ -f "$PAYMENT_UP" ]; then
   echo "Applying Payment migration"
   psql_in_postgres < "$PAYMENT_UP"
+  if [ -f "$PAYMENT_RECON_UP" ]; then
+    echo "Applying Payment reconciliation migration"
+    psql_in_postgres < "$PAYMENT_RECON_UP"
+  fi
+
   echo "Running Payment repository integration tests"
   go test -count=1 -tags=integration ./services/payment/internal/infrastructure/postgres -run '^TestIntegration'
+
+  if [ -f "$PAYMENT_RECON_DOWN" ]; then
+    echo "Rolling back Payment reconciliation migration"
+    psql_in_postgres < "$PAYMENT_RECON_DOWN"
+  fi
   echo "Rolling back Payment migration"
   psql_in_postgres < "$PAYMENT_DOWN"
-  payment_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('payments','payment_attempts');")"
+
+  payment_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('payments','payment_attempts','payment_reconciliations');")"
   [ "$payment_remaining" = "0" ] || { echo "Payment rollback left $payment_remaining tables" >&2; exit 1; }
   echo "Payment migration and repository integration validation passed."
 fi
