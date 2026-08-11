@@ -24,8 +24,14 @@ message QuoteRequest {
   int32 room_quantity = 6;
 }
 
-message GetQuoteRequest {
-  string quote_id = 1;
+message GetQuoteRequest { string quote_id = 1; }
+
+message CancellationPolicyValue {
+  string policy_code = 1;
+  string policy_version = 2;
+  int64 free_cancel_until_unix_ms = 3;
+  int32 refund_basis_points = 4;
+  int64 cancellation_fee_minor = 5;
 }
 
 message QuoteValue {
@@ -45,15 +51,11 @@ message QuoteValue {
   string pricing_version = 14;
   int64 created_at_unix_ms = 15;
   int64 expires_at_unix_ms = 16;
+  CancellationPolicyValue cancellation_policy = 17;
 }
 
-message QuoteResponse {
-  QuoteValue quote = 1;
-}
-
-message GetQuoteResponse {
-  QuoteValue quote = 1;
-}
+message QuoteResponse { QuoteValue quote = 1; }
+message GetQuoteResponse { QuoteValue quote = 1; }
 
 enum QuoteErrorCode {
   QUOTE_ERROR_CODE_UNSPECIFIED = 0;
