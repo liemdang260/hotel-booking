@@ -46,7 +46,7 @@ func TestCustomerAccessDerivesCreateOwnerFromPrincipal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = service.Create(context.Background(), CustomerPrincipal{UserID: "owner"}, "booking-1", "quote-1", "pm-1", "key-1")
+	_, err = service.Create(context.Background(), CustomerPrincipal{UserID: "owner", SubjectType: "USER"}, "booking-1", "quote-1", "pm-1", "key-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,10 +62,10 @@ func TestCustomerAccessRejectsCrossUserGetAndCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.Get(context.Background(), CustomerPrincipal{UserID: "attacker"}, "booking-1"); !errors.Is(err, ErrForbidden) {
+	if _, err = service.Get(context.Background(), CustomerPrincipal{UserID: "attacker", SubjectType: "USER"}, "booking-1"); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("get error = %v", err)
 	}
-	_, err = service.Cancel(context.Background(), CustomerPrincipal{UserID: "attacker"}, CancelBookingInput{
+	_, err = service.Cancel(context.Background(), CustomerPrincipal{UserID: "attacker", SubjectType: "USER"}, CancelBookingInput{
 		BookingID: "booking-1", IdempotencyKey: "key", RequestHash: "hash", Reason: "CHANGE_OF_PLAN",
 	})
 	if !errors.Is(err, ErrForbidden) || canceller.called {
@@ -79,7 +79,7 @@ func TestCustomerAccessScopesListToPrincipal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = service.List(context.Background(), CustomerPrincipal{UserID: "owner"}, 20, ""); err != nil {
+	if _, _, err = service.List(context.Background(), CustomerPrincipal{UserID: "owner", SubjectType: "USER"}, 20, ""); err != nil {
 		t.Fatal(err)
 	}
 	if reader.listUser != "owner" {
