@@ -11,9 +11,7 @@ import (
 	"github.com/liemdang260/hotel-booking/services/gateway/internal/domain"
 )
 
-type testAuth struct {
-	sawInternal bool
-}
+type testAuth struct{}
 
 func (a *testAuth) Authenticate(_ context.Context, authorization string) (domain.Principal, error) {
 	if authorization != "Bearer token" {
