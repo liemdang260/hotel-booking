@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/liemdang260/hotel-booking/services/payment/internal/domain"
 	"github.com/liemdang260/hotel-booking/services/payment/internal/provider"
@@ -20,13 +21,14 @@ type CreateRefundInput struct {
 
 type CreateRefund struct {
 	refunds  repository.RefundRepository
+	payments repository.PaymentReader
 	provider provider.RefundProvider
 	ids      IDGenerator
 	clock    Clock
 }
 
-func NewCreateRefund(r repository.RefundRepository, p provider.RefundProvider, ids IDGenerator, c Clock) *CreateRefund {
-	return &CreateRefund{refunds: r, provider: p, ids: ids, clock: c}
+func NewCreateRefund(r repository.RefundRepository, payments repository.PaymentReader, p provider.RefundProvider, ids IDGenerator, c Clock) *CreateRefund {
+	return &CreateRefund{refunds: r, payments: payments, provider: p, ids: ids, clock: c}
 }
 
 func (u *CreateRefund) Execute(ctx context.Context, in CreateRefundInput) (domain.Refund, error) {
@@ -37,6 +39,14 @@ func (u *CreateRefund) Execute(ctx context.Context, in CreateRefundInput) (domai
 		return prior, nil
 	} else if !errors.Is(err, repository.ErrRefundNotFound) {
 		return domain.Refund{}, err
+	}
+	payment, err := u.payments.GetByID(ctx, in.PaymentID)
+	if err != nil {
+		return domain.Refund{}, err
+	}
+	if payment.Status != domain.StatusSucceeded || payment.BookingID != in.BookingID ||
+		payment.Currency != strings.ToUpper(in.Currency) || in.AmountMinor > payment.AmountMinor {
+		return domain.Refund{}, repository.ErrRefundPaymentConflict
 	}
 	refund, err := domain.NewRefund(u.ids.NewID(), in.PaymentID, in.BookingID, in.IdempotencyKey, in.AmountMinor, in.Currency, u.clock.Now())
 	if err != nil {
