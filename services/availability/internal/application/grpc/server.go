@@ -30,55 +30,90 @@ func NewServer(usecases AvailabilityUsecases) *Server {
 
 func (s *Server) CheckAvailability(ctx context.Context, request *availabilityv1.CheckAvailabilityRequest) (*availabilityv1.CheckAvailabilityResponse, error) {
 	checkIn, checkOut, err := parseStay(request.GetCheckIn(), request.GetCheckOut())
-	if err != nil { return nil, mapError(err) }
+	if err != nil {
+		return nil, mapError(err)
+	}
 	result, err := s.usecases.CheckAvailability(ctx, usecase.CheckAvailabilityInput{
-		HotelID:domain.HotelID(request.GetHotelId()), RoomTypeID:domain.RoomTypeID(request.GetRoomTypeId()),
-		CheckIn:checkIn, CheckOut:checkOut, Quantity:int(request.GetQuantity()),
+		HotelID:    domain.HotelID(request.GetHotelId()),
+		RoomTypeID: domain.RoomTypeID(request.GetRoomTypeId()),
+		CheckIn:    checkIn,
+		CheckOut:   checkOut,
+		Quantity:   int(request.GetQuantity()),
 	})
-	if err != nil { return nil, mapError(err) }
+	if err != nil {
+		return nil, mapError(err)
+	}
 	return &availabilityv1.CheckAvailabilityResponse{
-		Available:result.Available, AvailableQuantity:int32(result.AvailableQuantity),
+		Available:         result.Available,
+		AvailableQuantity: int32(result.AvailableQuantity),
 	}, nil
 }
 
-func (s *Server) ReserveInventory(ctx context.Context, request *availabilityv1.ReserveInventoryRequest) (*availabilityv1.ReservationResponse, error) {
+func (s *Server) ReserveInventory(ctx context.Context, request *availabilityv1.ReserveInventoryRequest) (*availabilityv1.ReserveInventoryResponse, error) {
 	checkIn, checkOut, err := parseStay(request.GetCheckIn(), request.GetCheckOut())
-	if err != nil { return nil, mapError(err) }
+	if err != nil {
+		return nil, mapError(err)
+	}
 	result, err := s.usecases.ReserveInventory(ctx, usecase.ReserveInventoryInput{
-		BookingID:domain.BookingID(request.GetBookingId()), HotelID:domain.HotelID(request.GetHotelId()),
-		RoomTypeID:domain.RoomTypeID(request.GetRoomTypeId()), CheckIn:checkIn, CheckOut:checkOut,
-		Quantity:int(request.GetQuantity()), HoldTTL:time.Duration(request.GetHoldTtlSeconds())*time.Second,
+		BookingID:  domain.BookingID(request.GetBookingId()),
+		HotelID:    domain.HotelID(request.GetHotelId()),
+		RoomTypeID: domain.RoomTypeID(request.GetRoomTypeId()),
+		CheckIn:    checkIn,
+		CheckOut:   checkOut,
+		Quantity:   int(request.GetQuantity()),
+		HoldTTL:    time.Duration(request.GetHoldTtlSeconds()) * time.Second,
 	})
-	if err != nil { return nil, mapError(err) }
-	return reservationResponse(result), nil
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &availabilityv1.ReserveInventoryResponse{
+		ReservationId: string(result.ReservationID),
+		Status:        string(result.Status),
+		ExpiresAt:     formatExpiresAt(result.ExpiresAt),
+	}, nil
 }
 
-func (s *Server) ConfirmReservation(ctx context.Context, request *availabilityv1.ConfirmReservationRequest) (*availabilityv1.ReservationResponse, error) {
+func (s *Server) ConfirmReservation(ctx context.Context, request *availabilityv1.ConfirmReservationRequest) (*availabilityv1.ConfirmReservationResponse, error) {
 	result, err := s.usecases.ConfirmReservation(ctx, domain.ReservationID(request.GetReservationId()))
-	if err != nil { return nil, mapError(err) }
-	return reservationResponse(result), nil
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &availabilityv1.ConfirmReservationResponse{
+		ReservationId: string(result.ReservationID),
+		Status:        string(result.Status),
+		ExpiresAt:     formatExpiresAt(result.ExpiresAt),
+	}, nil
 }
 
-func (s *Server) ReleaseReservation(ctx context.Context, request *availabilityv1.ReleaseReservationRequest) (*availabilityv1.ReservationResponse, error) {
+func (s *Server) ReleaseReservation(ctx context.Context, request *availabilityv1.ReleaseReservationRequest) (*availabilityv1.ReleaseReservationResponse, error) {
 	result, err := s.usecases.ReleaseReservation(ctx, domain.ReservationID(request.GetReservationId()))
-	if err != nil { return nil, mapError(err) }
-	return reservationResponse(result), nil
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &availabilityv1.ReleaseReservationResponse{
+		ReservationId: string(result.ReservationID),
+		Status:        string(result.Status),
+		ExpiresAt:     formatExpiresAt(result.ExpiresAt),
+	}, nil
 }
 
 func parseStay(checkInValue, checkOutValue string) (time.Time, time.Time, error) {
 	checkIn, err := time.Parse(time.DateOnly, checkInValue)
-	if err != nil { return time.Time{}, time.Time{}, usecase.ErrInvalidRequest }
+	if err != nil {
+		return time.Time{}, time.Time{}, usecase.ErrInvalidRequest
+	}
 	checkOut, err := time.Parse(time.DateOnly, checkOutValue)
-	if err != nil { return time.Time{}, time.Time{}, usecase.ErrInvalidRequest }
+	if err != nil {
+		return time.Time{}, time.Time{}, usecase.ErrInvalidRequest
+	}
 	return checkIn.UTC(), checkOut.UTC(), nil
 }
 
-func reservationResponse(result usecase.ReservationResult) *availabilityv1.ReservationResponse {
-	response := &availabilityv1.ReservationResponse{
-		ReservationId:string(result.ReservationID), Status:string(result.Status),
+func formatExpiresAt(expiresAt *time.Time) string {
+	if expiresAt == nil {
+		return ""
 	}
-	if result.ExpiresAt != nil { response.ExpiresAt = result.ExpiresAt.UTC().Format(time.RFC3339Nano) }
-	return response
+	return expiresAt.UTC().Format(time.RFC3339Nano)
 }
 
 func mapError(err error) error {
