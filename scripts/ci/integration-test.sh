@@ -67,6 +67,11 @@ export AVAILABILITY_TEST_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PA
 echo "Running Availability repository integration tests"
 go test -count=1 -tags=integration ./services/availability/internal/infrastructure/postgres -run '^TestIntegration'
 
+if [ -d services/availability/internal/integration ]; then
+  echo "Running Availability concurrency and idempotency integration tests"
+  go test -count=1 -tags=integration ./services/availability/internal/integration
+fi
+
 echo "Rolling back Availability migration"
 psql_in_postgres < "$DOWN"
 
@@ -77,4 +82,4 @@ if [ "$remaining" != "0" ]; then
   exit 1
 fi
 
-echo "Availability migration and repository integration validation passed."
+echo "Availability migration, repository, and concurrency integration validation passed."
