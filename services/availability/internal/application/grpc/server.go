@@ -18,6 +18,7 @@ type AvailabilityUsecases interface {
 	ReserveInventory(context.Context, usecase.ReserveInventoryInput) (usecase.ReservationResult, error)
 	ConfirmReservation(context.Context, domain.ReservationID) (usecase.ReservationResult, error)
 	ReleaseReservation(context.Context, domain.ReservationID) (usecase.ReservationResult, error)
+	CancelBookedReservation(context.Context, domain.ReservationID) (usecase.ReservationResult, error)
 }
 
 type Server struct {
@@ -97,6 +98,17 @@ func (s *Server) ReleaseReservation(ctx context.Context, request *availabilityv1
 	}, nil
 }
 
+func (s *Server) CancelBookedReservation(ctx context.Context, request *availabilityv1.CancelBookedReservationRequest) (*availabilityv1.CancelBookedReservationResponse, error) {
+	result, err := s.usecases.CancelBookedReservation(ctx, domain.ReservationID(request.GetReservationId()))
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &availabilityv1.CancelBookedReservationResponse{
+		ReservationId: string(result.ReservationID),
+		Status:        string(result.Status),
+	}, nil
+}
+
 func parseStay(checkInValue, checkOutValue string) (time.Time, time.Time, error) {
 	checkIn, err := time.Parse(time.DateOnly, checkInValue)
 	if err != nil {
@@ -132,3 +144,4 @@ func mapError(err error) error {
 		return status.Error(codes.Internal, "availability operation failed")
 	}
 }
+
