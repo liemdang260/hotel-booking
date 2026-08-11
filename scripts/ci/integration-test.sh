@@ -47,6 +47,8 @@ AVAILABILITY_VERIFY="services/availability/migrations/000001_create_availability
 AVAILABILITY_DOWN="services/availability/migrations/000001_create_availability_schema.down.sql"
 BOOKING_UP="services/booking/migrations/000001_create_booking_schema.up.sql"
 BOOKING_DOWN="services/booking/migrations/000001_create_booking_schema.down.sql"
+PRICING_UP="services/pricing/migrations/000001_create_quotes.up.sql"
+PRICING_DOWN="services/pricing/migrations/000001_create_quotes.down.sql"
 
 for file in "$AVAILABILITY_UP" "$AVAILABILITY_VERIFY" "$AVAILABILITY_DOWN"; do
   if [ ! -f "$file" ]; then
@@ -64,12 +66,22 @@ if [ -f "$BOOKING_UP" ] || [ -f "$BOOKING_DOWN" ]; then
   done
 fi
 
+if [ -f "$PRICING_UP" ] || [ -f "$PRICING_DOWN" ]; then
+  for file in "$PRICING_UP" "$PRICING_DOWN"; do
+    if [ ! -f "$file" ]; then
+      echo "Incomplete Pricing migration pair: missing $file" >&2
+      exit 1
+    fi
+  done
+fi
+
 echo "Starting PostgreSQL only for integration validation"
 compose up -d --wait postgres
 compose ps postgres
 
 export AVAILABILITY_TEST_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
 export BOOKING_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
+export PRICING_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
 
 echo "Applying Availability migration"
 psql_in_postgres < "$AVAILABILITY_UP"
@@ -117,4 +129,27 @@ if [ -f "$BOOKING_UP" ]; then
   fi
 
   echo "Booking migration and repository integration validation passed."
+fi
+
+if [ -f "$PRICING_UP" ]; then
+  echo "Applying Pricing migration"
+  psql_in_postgres < "$PRICING_UP"
+
+  if [ -d services/pricing/internal/infrastructure/postgres ]; then
+    echo "Running Pricing repository integration tests"
+    go test -count=1 -tags=integration ./services/pricing/internal/infrastructure/postgres -run '^TestIntegration'
+  fi
+
+  echo "Rolling back Pricing migration"
+  psql_in_postgres < "$PRICING_DOWN"
+
+  echo "Verifying rollback removed Pricing objects"
+  pricing_tables="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'quotes';")"
+  pricing_functions="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'reject_quote_update';")"
+  if [ "$pricing_tables" != "0" ] || [ "$pricing_functions" != "0" ]; then
+    echo "Pricing rollback left tables=$pricing_tables functions=$pricing_functions behind" >&2
+    exit 1
+  fi
+
+  echo "Pricing migration and repository integration validation passed."
 fi
