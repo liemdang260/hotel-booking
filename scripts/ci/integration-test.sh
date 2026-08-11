@@ -24,7 +24,9 @@ set -a
 set +a
 
 POSTGRES_USER="${POSTGRES_USER:-hotel}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-hotel}"
 POSTGRES_DB="${POSTGRES_DB:-hotel_booking}"
+POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 
 compose() {
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
@@ -51,7 +53,7 @@ for file in "$UP" "$VERIFY" "$DOWN"; do
   fi
 done
 
-echo "Starting PostgreSQL only for Availability migration validation"
+echo "Starting PostgreSQL only for Availability integration validation"
 compose up -d --wait postgres
 compose ps postgres
 
@@ -60,6 +62,10 @@ psql_in_postgres < "$UP"
 
 echo "Executing Availability schema verification"
 psql_in_postgres < "$VERIFY"
+
+export AVAILABILITY_TEST_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
+echo "Running Availability repository integration tests"
+go test -count=1 -tags=integration ./services/availability/internal/infrastructure/postgres -run '^TestIntegration'
 
 echo "Rolling back Availability migration"
 psql_in_postgres < "$DOWN"
@@ -71,4 +77,4 @@ if [ "$remaining" != "0" ]; then
   exit 1
 fi
 
-echo "Availability migration apply/verify/rollback passed."
+echo "Availability migration and repository integration validation passed."
