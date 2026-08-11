@@ -23,6 +23,8 @@ psql_in_postgres(){ compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTG
 
 AUTH_UP="services/auth/migrations/000001_create_auth_schema.up.sql"
 AUTH_DOWN="services/auth/migrations/000001_create_auth_schema.down.sql"
+CATALOG_UP="services/catalog/migrations/000001_create_catalog_schema.up.sql"
+CATALOG_DOWN="services/catalog/migrations/000001_create_catalog_schema.down.sql"
 AVAILABILITY_UP="services/availability/migrations/000001_create_availability_schema.up.sql"
 AVAILABILITY_VERIFY="services/availability/migrations/000001_create_availability_schema_test.sql"
 AVAILABILITY_DOWN="services/availability/migrations/000001_create_availability_schema.down.sql"
@@ -46,7 +48,7 @@ PAYMENT_REFUND_UP="services/payment/migrations/000003_create_refunds.up.sql"
 PAYMENT_REFUND_DOWN="services/payment/migrations/000003_create_refunds.down.sql"
 
 for file in "$AVAILABILITY_UP" "$AVAILABILITY_VERIFY" "$AVAILABILITY_DOWN"; do [ -f "$file" ] || { echo "Missing migration test input: $file" >&2; exit 1; }; done
-for pair in "Auth:$AUTH_UP:$AUTH_DOWN" "Availability booked cancellation:$AVAILABILITY_CANCELLATION_UP:$AVAILABILITY_CANCELLATION_DOWN" "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Booking cancellation workflow:$BOOKING_CANCELLATION_UP:$BOOKING_CANCELLATION_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN" "Payment refunds:$PAYMENT_REFUND_UP:$PAYMENT_REFUND_DOWN"; do
+for pair in "Auth:$AUTH_UP:$AUTH_DOWN" "Catalog:$CATALOG_UP:$CATALOG_DOWN" "Availability booked cancellation:$AVAILABILITY_CANCELLATION_UP:$AVAILABILITY_CANCELLATION_DOWN" "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Booking cancellation workflow:$BOOKING_CANCELLATION_UP:$BOOKING_CANCELLATION_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN" "Payment refunds:$PAYMENT_REFUND_UP:$PAYMENT_REFUND_DOWN"; do
   name="${pair%%:*}"; rest="${pair#*:}"; up="${rest%%:*}"; down="${rest#*:}"
   if [ -f "$up" ] || [ -f "$down" ]; then [ -f "$up" ] && [ -f "$down" ] || { echo "Incomplete $name migration pair" >&2; exit 1; }; fi
 done
@@ -60,6 +62,7 @@ echo "Starting PostgreSQL only for integration validation"
 compose up -d --wait postgres
 compose ps postgres
 export AUTH_TEST_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
+export CATALOG_TEST_DATABASE_URL="$AUTH_TEST_DATABASE_URL"
 export AVAILABILITY_TEST_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
 export BOOKING_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
 export PRICING_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
@@ -85,6 +88,15 @@ if [ -f "$AUTH_UP" ]; then
   auth_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('auth_users','auth_refresh_tokens');")"
   [ "$auth_remaining" = "0" ] || { echo "Auth rollback left $auth_remaining tables" >&2; exit 1; }
   echo "Auth migration validation passed."
+fi
+
+if [ -f "$CATALOG_UP" ]; then
+  echo "Applying Catalog migration"; psql_in_postgres < "$CATALOG_UP"
+  if [ -d services/catalog/internal/infrastructure/postgres ]; then echo "Running Catalog repository integration tests"; go test -count=1 -tags=integration ./services/catalog/internal/infrastructure/postgres -run '^TestIntegration'; fi
+  echo "Rolling back Catalog migration"; psql_in_postgres < "$CATALOG_DOWN"
+  catalog_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('catalog_hotels','catalog_room_types');")"
+  [ "$catalog_remaining" = "0" ] || { echo "Catalog rollback left $catalog_remaining tables" >&2; exit 1; }
+  echo "Catalog migration validation passed."
 fi
 
 if [ -f "$BOOKING_UP" ]; then

@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package hotelbooking.catalog.v1;
+
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/catalog/v1;catalogv1";
+
+service CatalogService {
+  rpc GetHotel(GetHotelRequest) returns (GetHotelResponse);
+  rpc GetRoomTypes(GetRoomTypesRequest) returns (GetRoomTypesResponse);
+  rpc SearchCandidates(SearchCandidatesRequest) returns (SearchCandidatesResponse);
+}
+
+message Hotel {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string address = 4;
+  string city = 5;
+  string country = 6;
+  double latitude = 7;
+  double longitude = 8;
+  repeated string amenities = 9;
+}
+
+message RoomType {
+  string id = 1;
+  string hotel_id = 2;
+  string name = 3;
+  string description = 4;
+  int32 capacity = 5;
+  int32 bed_count = 6;
+  repeated string amenities = 7;
+}
+
+message HotelCandidate {
+  Hotel hotel = 1;
+  repeated RoomType room_types = 2;
+}
+
+message GetHotelRequest { string hotel_id = 1; }
+message GetHotelResponse { Hotel hotel = 1; }
+
+message GetRoomTypesRequest { string hotel_id = 1; }
+message GetRoomTypesResponse { repeated RoomType room_types = 1; }
+
+message SearchCandidatesRequest {
+  string city = 1;
+  int32 guest_count = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message SearchCandidatesResponse {
+  repeated HotelCandidate candidates = 1;
+  string next_page_token = 2;
+}
+
+enum CatalogErrorCode {
+  CATALOG_ERROR_CODE_UNSPECIFIED = 0;
+  CATALOG_ERROR_CODE_NOT_FOUND = 1;
+  CATALOG_ERROR_CODE_INVALID_QUERY = 2;
+}
