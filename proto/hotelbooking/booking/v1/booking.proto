@@ -33,10 +33,10 @@ message Booking {
 
 message CreateBookingRequest {
   Principal actor = 1;
-  string calling_service = 2;
-  string quote_id = 3;
-  string payment_method_id = 4;
-  string idempotency_key = 5;
+  // Calling-service identity is authenticated out-of-band by the internal transport.
+  string quote_id = 2;
+  string payment_method_id = 3;
+  string idempotency_key = 4;
 }
 
 message CreateBookingResponse {
@@ -45,8 +45,8 @@ message CreateBookingResponse {
 
 message GetBookingRequest {
   Principal actor = 1;
-  string calling_service = 2;
-  string booking_id = 3;
+  // Calling-service identity is authenticated out-of-band by the internal transport.
+  string booking_id = 2;
 }
 
 message GetBookingResponse {
@@ -55,9 +55,9 @@ message GetBookingResponse {
 
 message ListBookingsRequest {
   Principal actor = 1;
-  string calling_service = 2;
-  int32 page_size = 3;
-  string page_token = 4;
+  // Calling-service identity is authenticated out-of-band by the internal transport.
+  int32 page_size = 2;
+  string page_token = 3;
 }
 
 message ListBookingsResponse {
@@ -67,10 +67,10 @@ message ListBookingsResponse {
 
 message CancelBookingRequest {
   Principal actor = 1;
-  string calling_service = 2;
-  string booking_id = 3;
-  string idempotency_key = 4;
-  string reason = 5;
+  // Calling-service identity is authenticated out-of-band by the internal transport.
+  string booking_id = 2;
+  string idempotency_key = 3;
+  string reason = 4;
 }
 
 message CancelBookingResponse {
