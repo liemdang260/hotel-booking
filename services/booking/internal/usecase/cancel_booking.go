@@ -56,7 +56,7 @@ func NewCancelBookingUsecase(s CancellationStore,a BookedReservationCanceller,r 
 
 func (u *CancelBookingUsecase) Execute(ctx context.Context,in CancelBookingInput)(domain.BookingCancellation,error){
 	b,err:=u.store.LoadBooking(ctx,in.BookingID);if err!=nil{return domain.BookingCancellation{},err}
-	if b.Status!="CONFIRMED" && b.Status!="CANCELLED"{return domain.BookingCancellation{},domain.ErrBookingNotCancellable}
+	if b.Status!="CONFIRMED"{return domain.BookingCancellation{},domain.ErrBookingNotCancellable}
 	evaluatedAt:=u.now().UTC()
 	refund,err:=b.Policy.CalculateRefund(b.TotalMinor,evaluatedAt);if err!=nil{return domain.BookingCancellation{},err}
 	c,err:=domain.NewBookingCancellation(u.ids.NewID(),b.ID,in.IdempotencyKey,in.RequestHash,in.Reason,b.Currency,evaluatedAt,refund)
