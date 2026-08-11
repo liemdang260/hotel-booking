@@ -7,6 +7,8 @@ option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/pa
 service PaymentService {
   rpc CreatePayment(CreatePaymentRequest) returns (CreatePaymentResponse);
   rpc GetPayment(GetPaymentRequest) returns (GetPaymentResponse);
+  rpc CreateRefund(CreateRefundRequest) returns (CreateRefundResponse);
+  rpc GetRefund(GetRefundRequest) returns (GetRefundResponse);
 }
 
 message CreatePaymentRequest {
@@ -22,10 +24,7 @@ message CreatePaymentResponse {
   PaymentError error = 2;
 }
 
-message GetPaymentRequest {
-  string payment_id = 1;
-}
-
+message GetPaymentRequest { string payment_id = 1; }
 message GetPaymentResponse {
   Payment payment = 1;
   PaymentError error = 2;
@@ -44,6 +43,36 @@ message Payment {
   int64 updated_at_unix_ms = 10;
 }
 
+message CreateRefundRequest {
+  string payment_id = 1;
+  string booking_id = 2;
+  string idempotency_key = 3;
+  int64 amount_minor = 4;
+  string currency = 5;
+}
+message CreateRefundResponse {
+  Refund refund = 1;
+  PaymentError error = 2;
+}
+message GetRefundRequest { string refund_id = 1; }
+message GetRefundResponse {
+  Refund refund = 1;
+  PaymentError error = 2;
+}
+message Refund {
+  string refund_id = 1;
+  string payment_id = 2;
+  string booking_id = 3;
+  string idempotency_key = 4;
+  int64 amount_minor = 5;
+  string currency = 6;
+  RefundStatus status = 7;
+  string provider_reference = 8;
+  string failure_code = 9;
+  int64 created_at_unix_ms = 10;
+  int64 updated_at_unix_ms = 11;
+}
+
 enum PaymentStatus {
   PAYMENT_STATUS_UNSPECIFIED = 0;
   PAYMENT_STATUS_PENDING = 1;
@@ -51,6 +80,14 @@ enum PaymentStatus {
   PAYMENT_STATUS_SUCCEEDED = 3;
   PAYMENT_STATUS_FAILED = 4;
   PAYMENT_STATUS_UNKNOWN = 5;
+}
+enum RefundStatus {
+  REFUND_STATUS_UNSPECIFIED = 0;
+  REFUND_STATUS_PENDING = 1;
+  REFUND_STATUS_PROCESSING = 2;
+  REFUND_STATUS_SUCCEEDED = 3;
+  REFUND_STATUS_FAILED = 4;
+  REFUND_STATUS_UNKNOWN = 5;
 }
 
 message PaymentError {
