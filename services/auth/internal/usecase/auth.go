@@ -37,9 +37,10 @@ func(s *Service)newSession(ctx context.Context,u domain.User,family string)(Toke
 	now:=s.now().UTC();if family==""{family=s.ids.NewID()}
 	plain,hash,err:=s.issuer.IssueRefresh();if err!=nil{return Tokens{},err}
 	r:=domain.RefreshToken{ID:s.ids.NewID(),UserID:u.ID,FamilyID:family,TokenHash:hash,ExpiresAt:now.Add(s.refreshTTL),CreatedAt:now}
-	if err=s.sessions.Create(ctx,r);err!=nil{return Tokens{},err}
 	accessExp:=now.Add(s.accessTTL);access,err:=s.issuer.IssueAccess(domain.AccessClaims{Subject:u.ID,Issuer:s.issuerName,Audience:s.audience,TokenID:s.ids.NewID(),Roles:[]string{"customer"},IssuedAt:now,ExpiresAt:accessExp})
-	if err!=nil{return Tokens{},err};return Tokens{AccessToken:access,RefreshToken:plain,AccessExpiresAt:accessExp,RefreshExpiresAt:r.ExpiresAt},nil
+	if err!=nil{return Tokens{},err}
+	if err=s.sessions.Create(ctx,r);err!=nil{return Tokens{},err}
+	return Tokens{AccessToken:access,RefreshToken:plain,AccessExpiresAt:accessExp,RefreshExpiresAt:r.ExpiresAt},nil
 }
 func(s *Service)Refresh(ctx context.Context,plain string)(Tokens,error){
 	hash:=HashOpaqueToken(plain);old,err:=s.sessions.FindByHash(ctx,hash);if err!=nil{return Tokens{},domain.ErrInvalidRefreshToken}
@@ -51,12 +52,13 @@ func(s *Service)Refresh(ctx context.Context,plain string)(Tokens,error){
 	u,err:=s.users.FindByID(ctx,old.UserID);if err!=nil||u.Status!=domain.UserActive{return Tokens{},domain.ErrInvalidRefreshToken}
 	nextPlain,nextHash,err:=s.issuer.IssueRefresh();if err!=nil{return Tokens{},err}
 	next:=domain.RefreshToken{ID:s.ids.NewID(),UserID:u.ID,FamilyID:old.FamilyID,TokenHash:nextHash,RotatedFromID:old.ID,ExpiresAt:now.Add(s.refreshTTL),CreatedAt:now}
+	exp:=now.Add(s.accessTTL);access,err:=s.issuer.IssueAccess(domain.AccessClaims{Subject:u.ID,Issuer:s.issuerName,Audience:s.audience,TokenID:s.ids.NewID(),Roles:[]string{"customer"},IssuedAt:now,ExpiresAt:exp})
+	if err!=nil{return Tokens{},err}
 	if err=s.sessions.Rotate(ctx,old.ID,next,now);err!=nil{
 		if errors.Is(err,domain.ErrRefreshTokenReuse){_ = s.sessions.RevokeFamily(ctx,old.FamilyID,now)}
 		return Tokens{},err
 	}
-	exp:=now.Add(s.accessTTL);access,err:=s.issuer.IssueAccess(domain.AccessClaims{Subject:u.ID,Issuer:s.issuerName,Audience:s.audience,TokenID:s.ids.NewID(),Roles:[]string{"customer"},IssuedAt:now,ExpiresAt:exp})
-	if err!=nil{return Tokens{},err};return Tokens{AccessToken:access,RefreshToken:nextPlain,AccessExpiresAt:exp,RefreshExpiresAt:next.ExpiresAt},nil
+	return Tokens{AccessToken:access,RefreshToken:nextPlain,AccessExpiresAt:exp,RefreshExpiresAt:next.ExpiresAt},nil
 }
 func(s *Service)Logout(ctx context.Context,plain string)error{
 	hash:=HashOpaqueToken(plain);r,err:=s.sessions.FindByHash(ctx,hash);if err!=nil{return nil};return s.sessions.Revoke(ctx,r.ID,s.now().UTC())
