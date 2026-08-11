@@ -125,6 +125,7 @@ jobs:
         uses: bufbuild/buf-setup-action@v1
         with:
           version: "1.47.2"
+          github_token: ${{ github.token }}
 
       - name: Generate and validate protobuf contracts
         if: steps.scope.outputs.go_required == 'true'
