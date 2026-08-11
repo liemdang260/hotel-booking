@@ -72,6 +72,7 @@ func TestIntegrationRefundConfirmedProviderFailureIsDurable(t *testing.T) {
 	now := time.Date(2026, 8, 11, 9, 0, 0, 0, time.UTC)
 	create := usecase.NewCreateRefund(
 		NewRefundRepository(db),
+		payments,
 		integrationRefundProvider{result: provider.RefundResult{
 			Outcome: domain.AttemptDeclined, FailureCode: "REFUND_REJECTED", RawOutcome: "confirmed decline",
 		}},
