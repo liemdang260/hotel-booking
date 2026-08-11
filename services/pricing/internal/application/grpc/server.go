@@ -61,14 +61,7 @@ func (s *Server) BatchEstimate(ctx context.Context, request *pricingv1.BatchEsti
 		if err != nil {
 			return nil, mapError(err)
 		}
-		inputs = append(inputs, usecase.EstimateInput{
-			HotelID: input.HotelID,
-			RoomTypeID: input.RoomTypeID,
-			CheckIn: input.CheckIn,
-			CheckOut: input.CheckOut,
-			GuestCount: input.GuestCount,
-			RoomQuantity: input.RoomQuantity,
-		})
+		inputs = append(inputs, usecase.EstimateInput(input))
 	}
 	estimates, err := s.estimate.Execute(ctx, inputs)
 	if err != nil {
