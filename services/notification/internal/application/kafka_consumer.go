@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	eventsv1 "github.com/liemdang260/hotel-booking/gen/go/events/common/v1"
+	eventsv1 "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/events/common/v1"
 	"github.com/liemdang260/hotel-booking/services/notification/internal/usecase"
 	"google.golang.org/protobuf/proto"
 )

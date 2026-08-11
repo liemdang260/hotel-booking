@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package hotelbooking.events.availability.v1;
 
-option go_package = "github.com/liemdang260/hotel-booking/gen/go/events/availability/v1;availabilityeventsv1";
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/events/availability/v1;availabilityeventsv1";
 
 // ReservationExpiredV1 is immutable once published as event_version=1.
 message ReservationExpiredV1 {
