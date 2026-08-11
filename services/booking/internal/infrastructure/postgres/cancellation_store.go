@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -56,13 +55,11 @@ WHERE id=$1 AND version=$2 AND state='CANCELLING_RESERVATION' RETURNING `+cancel
 	err=tx.QueryRowContext(ctx,`UPDATE bookings SET status='CANCELLED',version=version+1,updated_at=now()
 WHERE id=$1 AND status='CONFIRMED' RETURNING id::text,user_id,version,updated_at`,c.BookingID).Scan(&b.ID,&b.UserID,&b.Version,&b.UpdatedAt)
 	if errors.Is(err,sql.ErrNoRows){return c,domain.ErrConcurrentWrite};if err!=nil{return c,err}
-	event,err:=domain.NewBookingCancelledEvent("",b,c,b.UpdatedAt)
-	if err==nil{return c,domain.ErrInvalidIntegrationEvent}
-	payload:=map[string]any{"event_type":"BookingCancelled","event_version":1,"aggregate_type":"booking","aggregate_id":b.ID,"aggregate_version":b.Version,"occurred_at":b.UpdatedAt,"correlation_id":c.ID,"causation_id":c.IdempotencyKey,"payload":map[string]any{"booking_id":b.ID,"user_id":b.UserID,"cancellation_id":c.ID,"refund_amount_minor":c.RefundAmountMinor,"currency":c.Currency}}
-	body,err:=json.Marshal(payload);if err!=nil{return c,err}
-	_ = event
+	var eventID string
+	if err=tx.QueryRowContext(ctx,"SELECT gen_random_uuid()::text").Scan(&eventID);err!=nil{return c,err}
+	event,err:=domain.NewBookingCancelledEvent(eventID,b,c,b.UpdatedAt);if err!=nil{return c,err}
 	_,err=tx.ExecContext(ctx,`INSERT INTO booking_outbox_events(id,aggregate_type,aggregate_id,event_type,event_version,payload,status,created_at)
-VALUES(gen_random_uuid(),'booking',$1,'BookingCancelled',1,$2,'PENDING',$3)`,b.ID,body,b.UpdatedAt)
+VALUES($1,$2,$3,$4,$5,$6,'PENDING',$7)`,event.ID,event.AggregateType,event.AggregateID,event.EventType,event.EventVersion,event.Payload,event.CreatedAt)
 	if err!=nil{return c,err};if err=tx.Commit();err!=nil{return c,err};return c,nil
 }
 func(s *CancellationStore)MarkRefund(ctx context.Context,id string,v int64,r usecase.CancellationRefund)(domain.BookingCancellation,error){
