@@ -7,10 +7,11 @@ import (
 )
 
 var (
-	ErrInvalidStay   = errors.New("invalid stay date range")
-	ErrInvalidParty  = errors.New("room quantity and guest count must be positive")
-	ErrInvalidMoney  = errors.New("invalid monetary value")
-	ErrQuoteExpired  = errors.New("quote expired")
+	ErrInvalidStay               = errors.New("invalid stay date range")
+	ErrInvalidParty              = errors.New("room quantity and guest count must be positive")
+	ErrInvalidMoney              = errors.New("invalid monetary value")
+	ErrQuoteExpired              = errors.New("quote expired")
+	ErrInvalidCancellationPolicy = errors.New("invalid cancellation policy")
 )
 
 type Date struct {
@@ -40,11 +41,11 @@ func (d Date) DaysUntil(other Date) (int, error) {
 }
 
 type QuoteInput struct {
-	HotelID     string
-	RoomTypeID  string
-	CheckIn     Date
-	CheckOut    Date
-	GuestCount  int
+	HotelID      string
+	RoomTypeID   string
+	CheckIn      Date
+	CheckOut     Date
+	GuestCount   int
 	RoomQuantity int
 }
 
@@ -59,13 +60,54 @@ func (i QuoteInput) Validate() error {
 	return err
 }
 
+type CancellationPolicyRule struct {
+	PolicyCode                  string
+	PolicyVersion               string
+	HotelTimeZone               string
+	FreeCancelDaysBeforeCheckIn int
+	FreeCancelLocalHour         int
+	RefundBasisPoints           int
+	CancellationFeeMinor        int64
+}
+
+type CancellationPolicy struct {
+	PolicyCode           string
+	PolicyVersion        string
+	FreeCancelUntil      time.Time
+	RefundBasisPoints    int
+	CancellationFeeMinor int64
+}
+
+func ResolveCancellationPolicy(checkIn Date, rule CancellationPolicyRule) (CancellationPolicy, error) {
+	if rule.PolicyCode == "" || rule.PolicyVersion == "" || rule.HotelTimeZone == "" ||
+		rule.FreeCancelDaysBeforeCheckIn < 0 || rule.FreeCancelLocalHour < 0 || rule.FreeCancelLocalHour > 23 ||
+		rule.RefundBasisPoints < 0 || rule.RefundBasisPoints > 10000 || rule.CancellationFeeMinor < 0 {
+		return CancellationPolicy{}, ErrInvalidCancellationPolicy
+	}
+	location, err := time.LoadLocation(rule.HotelTimeZone)
+	if err != nil {
+		return CancellationPolicy{}, ErrInvalidCancellationPolicy
+	}
+	localCheckIn := time.Date(checkIn.Year, checkIn.Month, checkIn.Day, 0, 0, 0, 0, location)
+	deadlineDay := localCheckIn.AddDate(0, 0, -rule.FreeCancelDaysBeforeCheckIn)
+	deadline := time.Date(deadlineDay.Year(), deadlineDay.Month(), deadlineDay.Day(), rule.FreeCancelLocalHour, 0, 0, 0, location).UTC()
+	return CancellationPolicy{
+		PolicyCode:           rule.PolicyCode,
+		PolicyVersion:        rule.PolicyVersion,
+		FreeCancelUntil:      deadline,
+		RefundBasisPoints:    rule.RefundBasisPoints,
+		CancellationFeeMinor: rule.CancellationFeeMinor,
+	}, nil
+}
+
 type RatePlan struct {
-	PricingVersion  string
-	Currency        string
-	NightlyMinor    int64
-	TaxBasisPoints  int64
-	ServiceFeeMinor int64
-	DiscountMinor   int64
+	PricingVersion   string
+	Currency         string
+	NightlyMinor     int64
+	TaxBasisPoints   int64
+	ServiceFeeMinor  int64
+	DiscountMinor    int64
+	CancellationRule CancellationPolicyRule
 }
 
 type PriceBreakdown struct {
@@ -107,11 +149,11 @@ func CalculatePrice(input QuoteInput, plan RatePlan) (PriceBreakdown, error) {
 		return PriceBreakdown{}, ErrInvalidMoney
 	}
 	return PriceBreakdown{
-		SubtotalMinor: subtotal,
-		TaxMinor: tax,
+		SubtotalMinor:   subtotal,
+		TaxMinor:        tax,
 		ServiceFeeMinor: plan.ServiceFeeMinor,
-		DiscountMinor: plan.DiscountMinor,
-		TotalMinor: beforeDiscount - plan.DiscountMinor,
+		DiscountMinor:   plan.DiscountMinor,
+		TotalMinor:      beforeDiscount - plan.DiscountMinor,
 	}, nil
 }
 
@@ -133,13 +175,14 @@ func checkedAdd(left, right int64) (int64, bool) {
 }
 
 type Quote struct {
-	ID             string
-	Input          QuoteInput
-	Price          PriceBreakdown
-	Currency       string
-	PricingVersion string
-	CreatedAt      time.Time
-	ExpiresAt      time.Time
+	ID                 string
+	Input              QuoteInput
+	Price              PriceBreakdown
+	Currency           string
+	PricingVersion     string
+	CancellationPolicy CancellationPolicy
+	CreatedAt          time.Time
+	ExpiresAt          time.Time
 }
 
 func (q Quote) IsExpired(now time.Time) bool {
