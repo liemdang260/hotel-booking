@@ -38,15 +38,18 @@ PAYMENT_UP="services/payment/migrations/000001_create_payments.up.sql"
 PAYMENT_DOWN="services/payment/migrations/000001_create_payments.down.sql"
 PAYMENT_RECON_UP="services/payment/migrations/000002_create_payment_reconciliations.up.sql"
 PAYMENT_RECON_DOWN="services/payment/migrations/000002_create_payment_reconciliations.down.sql"
+PAYMENT_REFUND_UP="services/payment/migrations/000003_create_refunds.up.sql"
+PAYMENT_REFUND_DOWN="services/payment/migrations/000003_create_refunds.down.sql"
 
 for file in "$AVAILABILITY_UP" "$AVAILABILITY_VERIFY" "$AVAILABILITY_DOWN"; do [ -f "$file" ] || { echo "Missing migration test input: $file" >&2; exit 1; }; done
-for pair in "Availability booked cancellation:$AVAILABILITY_CANCELLATION_UP:$AVAILABILITY_CANCELLATION_DOWN" "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN"; do
+for pair in "Availability booked cancellation:$AVAILABILITY_CANCELLATION_UP:$AVAILABILITY_CANCELLATION_DOWN" "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN" "Payment refunds:$PAYMENT_REFUND_UP:$PAYMENT_REFUND_DOWN"; do
   name="${pair%%:*}"; rest="${pair#*:}"; up="${rest%%:*}"; down="${rest#*:}"
   if [ -f "$up" ] || [ -f "$down" ]; then [ -f "$up" ] && [ -f "$down" ] || { echo "Incomplete $name migration pair" >&2; exit 1; }; fi
 done
 [ ! -f "$BOOKING_POLICY_UP" ] || [ -f "$BOOKING_UP" ] || { echo "Booking policy migration requires base Booking migration" >&2; exit 1; }
 [ ! -f "$PRICING_POLICY_UP" ] || [ -f "$PRICING_UP" ] || { echo "Pricing policy migration requires base Pricing migration" >&2; exit 1; }
 [ ! -f "$PAYMENT_RECON_UP" ] || [ -f "$PAYMENT_UP" ] || { echo "Payment reconciliation migration requires base Payment migration" >&2; exit 1; }
+[ ! -f "$PAYMENT_REFUND_UP" ] || [ -f "$PAYMENT_UP" ] || { echo "Payment refund migration requires base Payment migration" >&2; exit 1; }
 
 echo "Starting PostgreSQL only for integration validation"
 compose up -d --wait postgres
@@ -96,10 +99,12 @@ fi
 if [ -f "$PAYMENT_UP" ]; then
   echo "Applying Payment migration"; psql_in_postgres < "$PAYMENT_UP"
   if [ -f "$PAYMENT_RECON_UP" ]; then echo "Applying Payment reconciliation migration"; psql_in_postgres < "$PAYMENT_RECON_UP"; fi
+  if [ -f "$PAYMENT_REFUND_UP" ]; then echo "Applying Payment refund migration"; psql_in_postgres < "$PAYMENT_REFUND_UP"; fi
   echo "Running Payment repository integration tests"; go test -count=1 -tags=integration ./services/payment/internal/infrastructure/postgres -run '^TestIntegration'
+  if [ -f "$PAYMENT_REFUND_DOWN" ]; then echo "Rolling back Payment refund migration"; psql_in_postgres < "$PAYMENT_REFUND_DOWN"; fi
   if [ -f "$PAYMENT_RECON_DOWN" ]; then echo "Rolling back Payment reconciliation migration"; psql_in_postgres < "$PAYMENT_RECON_DOWN"; fi
   echo "Rolling back Payment migration"; psql_in_postgres < "$PAYMENT_DOWN"
-  payment_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('payments','payment_attempts','payment_reconciliations');")"
+  payment_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('payments','payment_attempts','payment_reconciliations','refunds','refund_attempts');")"
   [ "$payment_remaining" = "0" ] || { echo "Payment rollback left $payment_remaining tables" >&2; exit 1; }
   echo "Payment migration and repository integration validation passed."
 fi
