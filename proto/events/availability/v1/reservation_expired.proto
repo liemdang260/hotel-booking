@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package hotelbooking.events.availability.v1;
+
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/events/availability/v1;availabilityeventsv1";
+
+// ReservationExpiredV1 is immutable once published as event_version=1.
+message ReservationExpiredV1 {
+  string reservation_id = 1;
+  string booking_id = 2;
+  string hotel_id = 3;
+  string room_type_id = 4;
+  string check_in = 5;
+  string check_out = 6;
+  int32 quantity = 7;
+}
