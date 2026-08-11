@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package pricing.v1;
+
+option go_package = "github.com/liemdang260/hotel-booking/gen/pricing/v1;pricingv1";
+
+service PricingService {
+  rpc Quote(QuoteRequest) returns (QuoteResponse);
+  rpc GetQuote(GetQuoteRequest) returns (GetQuoteResponse);
+}
+
+message Date {
+  int32 year = 1;
+  int32 month = 2;
+  int32 day = 3;
+}
+
+message QuoteRequest {
+  string hotel_id = 1;
+  string room_type_id = 2;
+  Date check_in = 3;
+  Date check_out = 4;
+  int32 guest_count = 5;
+  int32 room_quantity = 6;
+}
+
+message GetQuoteRequest {
+  string quote_id = 1;
+}
+
+message QuoteValue {
+  string quote_id = 1;
+  string hotel_id = 2;
+  string room_type_id = 3;
+  Date check_in = 4;
+  Date check_out = 5;
+  int32 guest_count = 6;
+  int32 room_quantity = 7;
+  int64 subtotal_minor = 8;
+  int64 tax_minor = 9;
+  int64 service_fee_minor = 10;
+  int64 discount_minor = 11;
+  int64 total_minor = 12;
+  string currency = 13;
+  string pricing_version = 14;
+  int64 created_at_unix_ms = 15;
+  int64 expires_at_unix_ms = 16;
+}
+
+message QuoteResponse {
+  QuoteValue quote = 1;
+}
+
+message GetQuoteResponse {
+  QuoteValue quote = 1;
+}
+
+enum QuoteErrorCode {
+  QUOTE_ERROR_CODE_UNSPECIFIED = 0;
+  QUOTE_ERROR_CODE_NOT_FOUND = 1;
+  QUOTE_ERROR_CODE_EXPIRED = 2;
+  QUOTE_ERROR_CODE_INVALID_STAY = 3;
+  QUOTE_ERROR_CODE_INVALID_PARTY = 4;
+}
