@@ -66,6 +66,8 @@ func mapRefundResponse(refund domain.Refund, err error) RefundResponse {
 		code = "NOT_FOUND"
 	case errors.Is(err, repository.ErrRefundIdempotencyConflict):
 		code = "IDEMPOTENCY_CONFLICT"
+	case errors.Is(err, repository.ErrRefundPaymentConflict):
+		code = "BOOKING_CONFLICT"
 	case errors.Is(err, repository.ErrConcurrentUpdate):
 		code = "CONCURRENT_UPDATE"
 	}
