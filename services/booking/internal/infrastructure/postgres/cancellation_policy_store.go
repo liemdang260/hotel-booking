@@ -17,6 +17,10 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, p.BookingID,p.PolicyCode,p.PolicyVersion,p.
 	return err
 }
 
+func (s *Store) CreateCancellationPolicy(ctx context.Context, p *domain.CancellationPolicySnapshot) error {
+	return s.CreateCancellationPolicySnapshot(ctx, p)
+}
+
 func (s *Store) FindCancellationPolicySnapshot(ctx context.Context, bookingID string) (*domain.CancellationPolicySnapshot,error) {
 	var p domain.CancellationPolicySnapshot
 	err:=s.db.QueryRowContext(ctx,`SELECT booking_id::text,policy_code,policy_version,free_cancel_until,refund_basis_points,cancellation_fee_minor,currency,pricing_version,created_at FROM booking_cancellation_policies WHERE booking_id=$1`,bookingID).Scan(&p.BookingID,&p.PolicyCode,&p.PolicyVersion,&p.FreeCancelUntil,&p.RefundBasisPoints,&p.CancellationFeeMinor,&p.Currency,&p.PricingVersion,&p.CreatedAt)
