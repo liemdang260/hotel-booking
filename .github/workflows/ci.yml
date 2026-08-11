@@ -103,7 +103,7 @@ jobs:
             lint_required=true
           fi
 
-          if [[ "$full" == "true" ]] || grep -Eq '^deployments/|^scripts/ci/(integration-test|api-smoke)\.sh$|^services/.*/migrations/|(^|/)Dockerfile$|docker-compose' <<<"$changed_files"; then
+          if [[ "$full" == "true" ]] || grep -Eq '^deployments/|^scripts/ci/(integration-test|api-smoke)\.sh$|^services/.*/migrations/|(^|/)[^/]*_integration_test\.go$|(^|/)Dockerfile$|docker-compose' <<<"$changed_files"; then
             runtime_required=true
           fi
 
