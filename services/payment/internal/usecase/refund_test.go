@@ -11,6 +11,13 @@ import (
 	"github.com/liemdang260/hotel-booking/services/payment/internal/repository"
 )
 
+
+type refundPaymentReader struct{ payment domain.Payment }
+func (r refundPaymentReader) GetByID(context.Context,string)(domain.Payment,error){return r.payment,nil}
+func successfulRefundPayment() domain.Payment {
+	return domain.Payment{ID:"payment-1",BookingID:"booking-1",AmountMinor:25000,Currency:"USD",Status:domain.StatusSucceeded}
+}
+
 type refundRepoFake struct {
 	refund domain.Refund
 	attempts int
@@ -36,7 +43,7 @@ func(refundClock)Now()time.Time{return time.Date(2026,8,11,7,0,0,0,time.UTC)}
 func TestCreateRefundTimeoutReplayAndRecovery(t *testing.T){
 	repo:=&refundRepoFake{}
 	p:=&refundProviderFake{create:provider.RefundResult{Outcome:domain.AttemptUnknown,FailureCode:"TIMEOUT"},lookup:provider.RefundResult{Outcome:domain.AttemptSucceeded,ProviderReference:"provider-refund-1"}}
-	create:=NewCreateRefund(repo,p,&refundIDs{},refundClock{})
+	create:=NewCreateRefund(repo,refundPaymentReader{payment:successfulRefundPayment()},p,&refundIDs{},refundClock{})
 	in:=CreateRefundInput{PaymentID:"payment-1",BookingID:"booking-1",IdempotencyKey:"refund:booking-1:cancel-1",AmountMinor:25000,Currency:"usd"}
 	first,err:=create.Execute(context.Background(),in);if err!=nil{t.Fatal(err)}
 	if first.Status!=domain.RefundUnknown{t.Fatalf("status=%s",first.Status)}
@@ -48,9 +55,19 @@ func TestCreateRefundTimeoutReplayAndRecovery(t *testing.T){
 func TestCreateRefundConflictingReplay(t *testing.T){
 	repo:=&refundRepoFake{}
 	p:=&refundProviderFake{create:provider.RefundResult{Outcome:domain.AttemptSucceeded}}
-	create:=NewCreateRefund(repo,p,&refundIDs{},refundClock{})
+	create:=NewCreateRefund(repo,refundPaymentReader{payment:successfulRefundPayment()},p,&refundIDs{},refundClock{})
 	in:=CreateRefundInput{PaymentID:"payment-1",BookingID:"booking-1",IdempotencyKey:"key",AmountMinor:100,Currency:"USD"}
 	if _,err:=create.Execute(context.Background(),in);err!=nil{t.Fatal(err)}
 	in.AmountMinor=200
 	if _,err:=create.Execute(context.Background(),in);!errors.Is(err,repository.ErrRefundIdempotencyConflict){t.Fatalf("err=%v",err)}
+}
+
+func TestCreateRefundRejectsPaymentMismatchBeforeProvider(t *testing.T){
+	repo:=&refundRepoFake{}
+	p:=&refundProviderFake{create:provider.RefundResult{Outcome:domain.AttemptSucceeded}}
+	payment:=successfulRefundPayment();payment.BookingID="another-booking"
+	create:=NewCreateRefund(repo,refundPaymentReader{payment:payment},p,&refundIDs{},refundClock{})
+	in:=CreateRefundInput{PaymentID:"payment-1",BookingID:"booking-1",IdempotencyKey:"key",AmountMinor:100,Currency:"USD"}
+	if _,err:=create.Execute(context.Background(),in);!errors.Is(err,repository.ErrRefundPaymentConflict){t.Fatalf("err=%v",err)}
+	if p.calls!=0{t.Fatalf("provider calls=%d, want 0",p.calls)}
 }
