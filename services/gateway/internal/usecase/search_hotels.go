@@ -10,18 +10,23 @@ import (
 	"github.com/liemdang260/hotel-booking/services/gateway/internal/domain/repository"
 )
 
+const (
+	maxSearchGuestCount   = 16
+	maxSearchRoomQuantity = 16
+)
+
 type SearchConfig struct {
-	DefaultPageSize int32
-	MaxCandidates int32
-	MaxBatchItems int
+	DefaultPageSize  int32
+	MaxCandidates    int32
+	MaxBatchItems    int
 	DownstreamTimeout time.Duration
 }
 
 type SearchHotels struct {
-	catalog repository.Catalog
+	catalog      repository.Catalog
 	availability repository.Availability
-	pricing repository.Pricing
-	config SearchConfig
+	pricing      repository.Pricing
+	config       SearchConfig
 }
 
 func NewSearchHotels(catalog repository.Catalog, availability repository.Availability, pricing repository.Pricing, config SearchConfig) (*SearchHotels, error) {
@@ -37,8 +42,10 @@ func NewSearchHotels(catalog repository.Catalog, availability repository.Availab
 func (u *SearchHotels) Execute(ctx context.Context, input domain.SearchInput) (domain.SearchResult, error) {
 	input.City = strings.TrimSpace(input.City)
 	input.PageToken = strings.TrimSpace(input.PageToken)
-	if input.City == "" || input.GuestCount <= 0 || input.RoomQuantity <= 0 ||
-		input.CheckIn.IsZero() || !input.CheckOut.After(input.CheckIn) ||
+	if input.City == "" || input.GuestCount <= 0 || input.GuestCount > maxSearchGuestCount ||
+		input.RoomQuantity <= 0 || input.RoomQuantity > maxSearchRoomQuantity ||
+		!isUTCDate(input.CheckIn) || !isUTCDate(input.CheckOut) ||
+		!input.CheckOut.After(input.CheckIn) ||
 		input.CheckOut.Sub(input.CheckIn) > 31*24*time.Hour {
 		return domain.SearchResult{}, domain.ErrInvalidSearch
 	}
@@ -53,10 +60,10 @@ func (u *SearchHotels) Execute(ctx context.Context, input domain.SearchInput) (d
 	defer cancel()
 
 	catalogResult, err := u.catalog.SearchCandidates(callCtx, repository.CatalogSearchInput{
-		City: input.City,
+		City:       input.City,
 		GuestCount: input.GuestCount,
-		PageSize: input.PageSize,
-		PageToken: input.PageToken,
+		PageSize:   input.PageSize,
+		PageToken:  input.PageToken,
 	})
 	if err != nil {
 		return domain.SearchResult{}, err
@@ -67,7 +74,7 @@ func (u *SearchHotels) Execute(ctx context.Context, input domain.SearchInput) (d
 
 	availabilityItems := make([]repository.AvailabilityItem, 0)
 	pricingItems := make([]repository.PricingItem, 0)
-	expected := make(map[string]struct{})
+	expected := make(map[searchResultKey]struct{})
 	for _, candidate := range catalogResult.Candidates {
 		for _, room := range candidate.RoomTypes {
 			key := searchKey(candidate.Hotel.ID, room.ID)
@@ -79,18 +86,18 @@ func (u *SearchHotels) Execute(ctx context.Context, input domain.SearchInput) (d
 			}
 			expected[key] = struct{}{}
 			availabilityItems = append(availabilityItems, repository.AvailabilityItem{
-				HotelID: candidate.Hotel.ID,
-				RoomTypeID: room.ID,
-				CheckIn: input.CheckIn,
-				CheckOut: input.CheckOut,
-				Quantity: input.RoomQuantity,
+				HotelID:     candidate.Hotel.ID,
+				RoomTypeID:  room.ID,
+				CheckIn:     input.CheckIn,
+				CheckOut:    input.CheckOut,
+				Quantity:    input.RoomQuantity,
 			})
 			pricingItems = append(pricingItems, repository.PricingItem{
-				HotelID: candidate.Hotel.ID,
-				RoomTypeID: room.ID,
-				CheckIn: input.CheckIn,
-				CheckOut: input.CheckOut,
-				GuestCount: input.GuestCount,
+				HotelID:      candidate.Hotel.ID,
+				RoomTypeID:   room.ID,
+				CheckIn:      input.CheckIn,
+				CheckOut:     input.CheckOut,
+				GuestCount:   input.GuestCount,
 				RoomQuantity: input.RoomQuantity,
 			})
 		}
@@ -123,7 +130,7 @@ func (u *SearchHotels) Execute(ctx context.Context, input domain.SearchInput) (d
 		return domain.SearchResult{}, pricingErr
 	}
 
-	availabilityByKey := make(map[string]domain.Availability, len(availabilityResults))
+	availabilityByKey := make(map[searchResultKey]domain.Availability, len(availabilityResults))
 	for _, item := range availabilityResults {
 		key := searchKey(item.HotelID, item.RoomTypeID)
 		if _, wanted := expected[key]; !wanted {
@@ -134,7 +141,7 @@ func (u *SearchHotels) Execute(ctx context.Context, input domain.SearchInput) (d
 		}
 		availabilityByKey[key] = item
 	}
-	pricingByKey := make(map[string]domain.PriceEstimate, len(pricingResults))
+	pricingByKey := make(map[searchResultKey]domain.PriceEstimate, len(pricingResults))
 	for _, item := range pricingResults {
 		key := searchKey(item.HotelID, item.RoomTypeID)
 		if _, wanted := expected[key]; !wanted || item.Currency == "" || item.PricingVersion == "" || item.TotalMinor < 0 {
@@ -150,18 +157,18 @@ func (u *SearchHotels) Execute(ctx context.Context, input domain.SearchInput) (d
 	}
 
 	result := domain.SearchResult{
-		Hotels: make([]domain.SearchHotel, 0, len(catalogResult.Candidates)),
+		Hotels:        make([]domain.SearchHotel, 0, len(catalogResult.Candidates)),
 		NextPageToken: catalogResult.NextPageToken,
-		Advisory: true,
+		Advisory:      true,
 	}
 	for _, candidate := range catalogResult.Candidates {
 		hotel := domain.SearchHotel{Hotel: candidate.Hotel, Rooms: make([]domain.SearchRoom, 0, len(candidate.RoomTypes))}
 		for _, room := range candidate.RoomTypes {
 			key := searchKey(candidate.Hotel.ID, room.ID)
 			hotel.Rooms = append(hotel.Rooms, domain.SearchRoom{
-				RoomType: room,
+				RoomType:             room,
 				AdvisoryAvailability: availabilityByKey[key],
-				EstimatedPrice: pricingByKey[key],
+				EstimatedPrice:        pricingByKey[key],
 			})
 		}
 		result.Hotels = append(result.Hotels, hotel)
@@ -169,6 +176,19 @@ func (u *SearchHotels) Execute(ctx context.Context, input domain.SearchInput) (d
 	return result, nil
 }
 
-func searchKey(hotelID, roomTypeID string) string {
-	return hotelID + "|" + roomTypeID
+type searchResultKey struct {
+	hotelID    string
+	roomTypeID string
+}
+
+func searchKey(hotelID, roomTypeID string) searchResultKey {
+	return searchResultKey{hotelID: hotelID, roomTypeID: roomTypeID}
+}
+
+func isUTCDate(value time.Time) bool {
+	if value.IsZero() {
+		return false
+	}
+	utc := value.UTC()
+	return value.Equal(time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC))
 }
