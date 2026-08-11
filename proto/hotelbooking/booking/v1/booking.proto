@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package hotelbooking.booking.v1;
+
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/booking/v1;bookingv1";
+
+service BookingService {
+  rpc CreateBooking(CreateBookingRequest) returns (CreateBookingResponse);
+  rpc GetBooking(GetBookingRequest) returns (GetBookingResponse);
+  rpc ListBookings(ListBookingsRequest) returns (ListBookingsResponse);
+  rpc CancelBooking(CancelBookingRequest) returns (CancelBookingResponse);
+}
+
+message Principal {
+  string user_id = 1;
+  repeated string roles = 2;
+  string subject_type = 3;
+}
+
+message Booking {
+  string id = 1;
+  string hotel_id = 2;
+  string room_type_id = 3;
+  string check_in = 4;
+  string check_out = 5;
+  int32 guest_count = 6;
+  int32 room_quantity = 7;
+  string status = 8;
+  int64 total_minor = 9;
+  string currency = 10;
+  string created_at = 11;
+}
+
+message CreateBookingRequest {
+  Principal actor = 1;
+  // Calling-service identity is authenticated out-of-band by the internal transport.
+  string quote_id = 2;
+  string payment_method_id = 3;
+  string idempotency_key = 4;
+}
+
+message CreateBookingResponse {
+  Booking booking = 1;
+}
+
+message GetBookingRequest {
+  Principal actor = 1;
+  // Calling-service identity is authenticated out-of-band by the internal transport.
+  string booking_id = 2;
+}
+
+message GetBookingResponse {
+  Booking booking = 1;
+}
+
+message ListBookingsRequest {
+  Principal actor = 1;
+  // Calling-service identity is authenticated out-of-band by the internal transport.
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListBookingsResponse {
+  repeated Booking bookings = 1;
+  string next_page_token = 2;
+}
+
+message CancelBookingRequest {
+  Principal actor = 1;
+  // Calling-service identity is authenticated out-of-band by the internal transport.
+  string booking_id = 2;
+  string idempotency_key = 3;
+  string reason = 4;
+}
+
+message CancelBookingResponse {
+  Booking booking = 1;
+  string cancellation_id = 2;
+  string cancellation_state = 3;
+}
+
+enum BookingErrorCode {
+  BOOKING_ERROR_CODE_UNSPECIFIED = 0;
+  BOOKING_ERROR_CODE_INVALID_REQUEST = 1;
+  BOOKING_ERROR_CODE_UNAUTHENTICATED = 2;
+  BOOKING_ERROR_CODE_FORBIDDEN = 3;
+  BOOKING_ERROR_CODE_NOT_FOUND = 4;
+  BOOKING_ERROR_CODE_IDEMPOTENCY_CONFLICT = 5;
+  BOOKING_ERROR_CODE_QUOTE_EXPIRED = 6;
+  BOOKING_ERROR_CODE_NOT_CANCELLABLE = 7;
+  BOOKING_ERROR_CODE_DEPENDENCY_UNAVAILABLE = 8;
+}
