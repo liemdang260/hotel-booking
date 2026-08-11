@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package catalog.v1;
+package hotelbooking.catalog.v1;
 
-option go_package = "github.com/liemdang260/hotel-booking/gen/catalog/v1;catalogv1";
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/catalog/v1;catalogv1";
 
 service CatalogService {
   rpc GetHotel(GetHotelRequest) returns (GetHotelResponse);

@@ -10,10 +10,10 @@ import (
 )
 
 type catalogRepositoryStub struct {
-	hotel domain.Hotel
-	rooms []domain.RoomType
-	search domain.SearchResult
-	err error
+	hotel      domain.Hotel
+	rooms      []domain.RoomType
+	search     domain.SearchResult
+	err        error
 	lastFilter domain.SearchFilter
 }
 
@@ -50,7 +50,7 @@ func TestSearchRejectsUnboundedOrInvalidInput(t *testing.T) {
 		{GuestCount: 0},
 		{GuestCount: 17},
 		{GuestCount: 2, Limit: 51},
-		{GuestCount: 2, PageToken: string(make([]byte, 129))},
+		{GuestCount: 2, PageToken: "not-a-uuid"},
 	}
 	for _, filter := range cases {
 		if _, err := service.SearchCandidates(context.Background(), filter); !errors.Is(err, domain.ErrInvalidSearch) {
@@ -61,7 +61,14 @@ func TestSearchRejectsUnboundedOrInvalidInput(t *testing.T) {
 
 func TestGetRoomTypesRejectsInactiveOrMissingHotel(t *testing.T) {
 	service := NewCatalog(&catalogRepositoryStub{err: repository.ErrNotFound})
-	if _, err := service.GetRoomTypes(context.Background(), "hotel-1"); !errors.Is(err, repository.ErrNotFound) {
+	if _, err := service.GetRoomTypes(context.Background(), "00000000-0000-0000-0000-000000000001"); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestGetHotelRejectsMalformedIDBeforeRepository(t *testing.T) {
+	service := NewCatalog(&catalogRepositoryStub{})
+	if _, err := service.GetHotel(context.Background(), "not-a-uuid"); !errors.Is(err, domain.ErrInvalidCatalogID) {
 		t.Fatalf("err=%v", err)
 	}
 }
