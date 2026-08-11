@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package hotelbooking.payment.v1;
+
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/payment/v1;paymentv1";
+
+service PaymentService {
+  rpc CreatePayment(CreatePaymentRequest) returns (CreatePaymentResponse);
+  rpc GetPayment(GetPaymentRequest) returns (GetPaymentResponse);
+}
+
+message CreatePaymentRequest {
+  string booking_id = 1;
+  string idempotency_key = 2;
+  int64 amount_minor = 3;
+  string currency = 4;
+  string payment_method_ref = 5;
+}
+
+message CreatePaymentResponse {
+  Payment payment = 1;
+  PaymentError error = 2;
+}
+
+message GetPaymentRequest {
+  string payment_id = 1;
+}
+
+message GetPaymentResponse {
+  Payment payment = 1;
+  PaymentError error = 2;
+}
+
+message Payment {
+  string payment_id = 1;
+  string booking_id = 2;
+  string idempotency_key = 3;
+  int64 amount_minor = 4;
+  string currency = 5;
+  PaymentStatus status = 6;
+  string provider_reference = 7;
+  string failure_code = 8;
+  int64 created_at_unix_ms = 9;
+  int64 updated_at_unix_ms = 10;
+}
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_PENDING = 1;
+  PAYMENT_STATUS_PROCESSING = 2;
+  PAYMENT_STATUS_SUCCEEDED = 3;
+  PAYMENT_STATUS_FAILED = 4;
+  PAYMENT_STATUS_UNKNOWN = 5;
+}
+
+message PaymentError {
+  PaymentErrorCode code = 1;
+  string message = 2;
+}
+
+enum PaymentErrorCode {
+  PAYMENT_ERROR_CODE_UNSPECIFIED = 0;
+  PAYMENT_ERROR_CODE_INVALID_ARGUMENT = 1;
+  PAYMENT_ERROR_CODE_NOT_FOUND = 2;
+  PAYMENT_ERROR_CODE_IDEMPOTENCY_CONFLICT = 3;
+  PAYMENT_ERROR_CODE_BOOKING_CONFLICT = 4;
+  PAYMENT_ERROR_CODE_CONCURRENT_UPDATE = 5;
+  PAYMENT_ERROR_CODE_INTERNAL = 6;
+}
