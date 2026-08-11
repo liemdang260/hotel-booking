@@ -16,8 +16,8 @@ type SearchHotelsUsecase interface {
 }
 
 type SearchHandler struct {
-	search SearchHotelsUsecase
-	maxBodyBytes int64
+	search         SearchHotelsUsecase
+	maxBodyBytes  int64
 }
 
 func NewSearchHandler(search SearchHotelsUsecase) *SearchHandler {
@@ -26,9 +26,43 @@ func NewSearchHandler(search SearchHotelsUsecase) *SearchHandler {
 
 type publicError struct {
 	Error struct {
-		Code string `json:"code"`
+		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+type publicSearchResult struct {
+	Hotels        []publicHotel `json:"hotels"`
+	NextPageToken string        `json:"next_page_token,omitempty"`
+	Advisory      bool          `json:"advisory"`
+}
+
+type publicHotel struct {
+	ID          string       `json:"id"`
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Address     string       `json:"address"`
+	City        string       `json:"city"`
+	Country     string       `json:"country"`
+	Latitude    float64      `json:"latitude"`
+	Longitude   float64      `json:"longitude"`
+	Amenities   []string     `json:"amenities"`
+	Rooms       []publicRoom `json:"room_types"`
+}
+
+type publicRoom struct {
+	ID                string   `json:"id"`
+	Name              string   `json:"name"`
+	Description       string   `json:"description"`
+	Capacity          int32    `json:"capacity"`
+	BedCount          int32    `json:"bed_count"`
+	Amenities         []string `json:"amenities"`
+	Available         bool     `json:"available"`
+	AvailableQuantity int32    `json:"available_quantity"`
+	EstimatedTotal    int64    `json:"estimated_total_minor"`
+	Currency          string   `json:"currency"`
+	PricingVersion    string   `json:"pricing_version"`
+	Advisory          bool     `json:"advisory"`
 }
 
 func (h *SearchHandler) ServeHTTP(writer stdhttp.ResponseWriter, request *stdhttp.Request) {
@@ -70,13 +104,13 @@ func (h *SearchHandler) ServeHTTP(writer stdhttp.ResponseWriter, request *stdhtt
 		}
 	}
 	result, err := h.search.Execute(request.Context(), domain.SearchInput{
-		City: query.Get("city"),
-		CheckIn: checkIn.UTC(),
-		CheckOut: checkOut.UTC(),
-		GuestCount: guests,
+		City:         query.Get("city"),
+		CheckIn:      checkIn.UTC(),
+		CheckOut:     checkOut.UTC(),
+		GuestCount:   guests,
 		RoomQuantity: rooms,
-		PageSize: pageSize,
-		PageToken: query.Get("page_token"),
+		PageSize:     pageSize,
+		PageToken:    query.Get("page_token"),
 	})
 	if err != nil {
 		switch {
@@ -89,7 +123,47 @@ func (h *SearchHandler) ServeHTTP(writer stdhttp.ResponseWriter, request *stdhtt
 		}
 		return
 	}
-	writeJSON(writer, stdhttp.StatusOK, result)
+	writeJSON(writer, stdhttp.StatusOK, mapPublicSearch(result))
+}
+
+func mapPublicSearch(result domain.SearchResult) publicSearchResult {
+	response := publicSearchResult{
+		Hotels:        make([]publicHotel, 0, len(result.Hotels)),
+		NextPageToken: result.NextPageToken,
+		Advisory:      result.Advisory,
+	}
+	for _, item := range result.Hotels {
+		hotel := publicHotel{
+			ID:          item.Hotel.ID,
+			Name:        item.Hotel.Name,
+			Description: item.Hotel.Description,
+			Address:     item.Hotel.Address,
+			City:        item.Hotel.City,
+			Country:     item.Hotel.Country,
+			Latitude:    item.Hotel.Latitude,
+			Longitude:   item.Hotel.Longitude,
+			Amenities:   append([]string(nil), item.Hotel.Amenities...),
+			Rooms:       make([]publicRoom, 0, len(item.Rooms)),
+		}
+		for _, room := range item.Rooms {
+			hotel.Rooms = append(hotel.Rooms, publicRoom{
+				ID:                room.RoomType.ID,
+				Name:              room.RoomType.Name,
+				Description:       room.RoomType.Description,
+				Capacity:          room.RoomType.Capacity,
+				BedCount:          room.RoomType.BedCount,
+				Amenities:         append([]string(nil), room.RoomType.Amenities...),
+				Available:         room.AdvisoryAvailability.Available,
+				AvailableQuantity: room.AdvisoryAvailability.AvailableQuantity,
+				EstimatedTotal:    room.EstimatedPrice.TotalMinor,
+				Currency:          room.EstimatedPrice.Currency,
+				PricingVersion:    room.EstimatedPrice.PricingVersion,
+				Advisory:          true,
+			})
+		}
+		response.Hotels = append(response.Hotels, hotel)
+	}
+	return response
 }
 
 func boundedInt32(value string) (int32, error) {
