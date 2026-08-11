@@ -12,8 +12,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const gatewayServiceIdentity = "gateway"
-
 type CustomerQuoteAdapter struct {
 	client pricingv1.PricingServiceClient
 }
@@ -61,7 +59,6 @@ func NewCustomerBookingAdapter(client bookingv1.BookingServiceClient) *CustomerB
 func (a *CustomerBookingAdapter) CreateBooking(ctx context.Context, input domain.CreateBookingInput) (domain.Booking, error) {
 	response, err := a.client.CreateBooking(ctx, &bookingv1.CreateBookingRequest{
 		Actor: mapPrincipal(input.Actor),
-		CallingService: gatewayServiceIdentity,
 		QuoteId: input.QuoteID,
 		PaymentMethodId: input.PaymentMethodID,
 		IdempotencyKey: input.IdempotencyKey,
