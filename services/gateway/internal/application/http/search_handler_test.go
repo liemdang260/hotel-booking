@@ -13,8 +13,8 @@ import (
 
 type searchStub struct {
 	result domain.SearchResult
-	err error
-	input domain.SearchInput
+	err    error
+	input  domain.SearchInput
 }
 
 func (s *searchStub) Execute(_ context.Context, input domain.SearchInput) (domain.SearchResult, error) {
@@ -28,7 +28,7 @@ func TestSearchHandlerMapsBoundedQueryToStableAdvisoryResponse(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/hotels/search?city=Tokyo&check_in=2026-09-01&check_out=2026-09-04&guests=2&rooms=1&page_size=20", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), ""Advisory":true") {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "\"advisory\":true") {
 		t.Fatalf("code=%d body=%s", response.Code, response.Body.String())
 	}
 	if usecase.input.City != "Tokyo" || usecase.input.GuestCount != 2 || usecase.input.PageSize != 20 {
