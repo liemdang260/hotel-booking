@@ -1,27 +1,49 @@
 #!/bin/sh
 set -eu
 
-scan_roots=""
+domain_roots=""
+usecase_roots=""
 
-for root in services/*/internal/domain services/*/internal/usecase; do
+for root in services/*/internal/domain; do
   if [ -d "$root" ]; then
-    scan_roots="$scan_roots $root"
+    domain_roots="$domain_roots $root"
   fi
 done
 
-if [ -z "$scan_roots" ]; then
+for root in services/*/internal/usecase; do
+  if [ -d "$root" ]; then
+    usecase_roots="$usecase_roots $root"
+  fi
+done
+
+if [ -z "$domain_roots" ] && [ -z "$usecase_roots" ]; then
   echo "No domain/usecase packages found; architecture guard has nothing to scan."
   exit 0
 fi
 
-violations="$(
-  grep -R -n -E '"[^"]+/internal/(application|infrastructure)(/[^"]*)?"' $scan_roots     --include='*.go' || true
-)"
+violations=""
+
+if [ -n "$domain_roots" ]; then
+  domain_violations="$(
+    grep -R -n -E '"[^"]+/internal/(usecase|application|infrastructure)(/[^"]*)?"' $domain_roots --include='*.go' || true
+  )"
+  if [ -n "$domain_violations" ]; then
+    violations="$violations\nDomain must not import usecase/application/infrastructure:\n$domain_violations"
+  fi
+fi
+
+if [ -n "$usecase_roots" ]; then
+  usecase_violations="$(
+    grep -R -n -E '"[^"]+/internal/(application|infrastructure)(/[^"]*)?"' $usecase_roots --include='*.go' || true
+  )"
+  if [ -n "$usecase_violations" ]; then
+    violations="$violations\nUsecase must not import application/infrastructure:\n$usecase_violations"
+  fi
+fi
 
 if [ -n "$violations" ]; then
   echo "Architecture dependency violation detected."
-  echo "Domain and usecase packages must not import application or infrastructure packages."
-  echo "$violations"
+  printf '%b\n' "$violations"
   exit 1
 fi
 

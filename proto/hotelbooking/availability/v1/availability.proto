@@ -6,9 +6,9 @@ option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/av
 
 service AvailabilityService {
   rpc CheckAvailability(CheckAvailabilityRequest) returns (CheckAvailabilityResponse);
-  rpc ReserveInventory(ReserveInventoryRequest) returns (ReservationResponse);
-  rpc ConfirmReservation(ConfirmReservationRequest) returns (ReservationResponse);
-  rpc ReleaseReservation(ReleaseReservationRequest) returns (ReservationResponse);
+  rpc ReserveInventory(ReserveInventoryRequest) returns (ReserveInventoryResponse);
+  rpc ConfirmReservation(ConfirmReservationRequest) returns (ConfirmReservationResponse);
+  rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseReservationResponse);
 }
 
 message CheckAvailabilityRequest {
@@ -34,15 +34,27 @@ message ReserveInventoryRequest {
   int64 hold_ttl_seconds = 7;
 }
 
+message ReserveInventoryResponse {
+  string reservation_id = 1;
+  string status = 2;
+  string expires_at = 3;
+}
+
 message ConfirmReservationRequest {
   string reservation_id = 1;
+}
+
+message ConfirmReservationResponse {
+  string reservation_id = 1;
+  string status = 2;
+  string expires_at = 3;
 }
 
 message ReleaseReservationRequest {
   string reservation_id = 1;
 }
 
-message ReservationResponse {
+message ReleaseReservationResponse {
   string reservation_id = 1;
   string status = 2;
   string expires_at = 3;
