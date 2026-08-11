@@ -6,6 +6,7 @@ option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/av
 
 service AvailabilityService {
   rpc CheckAvailability(CheckAvailabilityRequest) returns (CheckAvailabilityResponse);
+  rpc BatchCheckAvailability(BatchCheckAvailabilityRequest) returns (BatchCheckAvailabilityResponse);
   rpc ReserveInventory(ReserveInventoryRequest) returns (ReserveInventoryResponse);
   rpc ConfirmReservation(ConfirmReservationRequest) returns (ConfirmReservationResponse);
   rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseReservationResponse);
@@ -23,6 +24,29 @@ message CheckAvailabilityRequest {
 message CheckAvailabilityResponse {
   bool available = 1;
   int32 available_quantity = 2;
+}
+
+message BatchAvailabilityItem {
+  string hotel_id = 1;
+  string room_type_id = 2;
+  string check_in = 3;
+  string check_out = 4;
+  int32 quantity = 5;
+}
+
+message BatchCheckAvailabilityRequest {
+  repeated BatchAvailabilityItem items = 1;
+}
+
+message BatchAvailabilityResult {
+  string hotel_id = 1;
+  string room_type_id = 2;
+  bool available = 3;
+  int32 available_quantity = 4;
+}
+
+message BatchCheckAvailabilityResponse {
+  repeated BatchAvailabilityResult results = 1;
 }
 
 message ReserveInventoryRequest {
