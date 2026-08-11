@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package hotelbooking.events.booking.v1;
+
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/events/booking/v1;bookingeventsv1";
+
+// BookingConfirmedV1 is immutable once published as event_version=1.
+message BookingConfirmedV1 {
+  string booking_id = 1;
+  string user_id = 2;
+  string hotel_id = 3;
+  string room_type_id = 4;
+  string check_in = 5;
+  string check_out = 6;
+  int64 total_minor = 7;
+  string currency = 8;
+}

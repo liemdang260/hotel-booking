@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package hotelbooking.events.common.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/events/common/v1;eventsv1";
+
+// EventEnvelope is the stable broker envelope. Payload contains the serialized
+// event-specific Protobuf message selected by event_type and event_version.
+message EventEnvelope {
+  string event_id = 1;
+  string event_type = 2;
+  uint32 event_version = 3;
+  string aggregate_type = 4;
+  string aggregate_id = 5;
+  int64 aggregate_version = 6;
+  google.protobuf.Timestamp occurred_at = 7;
+  string correlation_id = 8;
+  string causation_id = 9;
+  bytes payload = 10;
+}

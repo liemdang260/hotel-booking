@@ -50,9 +50,11 @@ PAYMENT_RECON_UP="services/payment/migrations/000002_create_payment_reconciliati
 PAYMENT_RECON_DOWN="services/payment/migrations/000002_create_payment_reconciliations.down.sql"
 PAYMENT_REFUND_UP="services/payment/migrations/000003_create_refunds.up.sql"
 PAYMENT_REFUND_DOWN="services/payment/migrations/000003_create_refunds.down.sql"
+NOTIFICATION_UP="services/notification/migrations/000001_create_notification_schema.up.sql"
+NOTIFICATION_DOWN="services/notification/migrations/000001_create_notification_schema.down.sql"
 
 for file in "$AVAILABILITY_UP" "$AVAILABILITY_VERIFY" "$AVAILABILITY_DOWN"; do [ -f "$file" ] || { echo "Missing migration test input: $file" >&2; exit 1; }; done
-for pair in "Auth:$AUTH_UP:$AUTH_DOWN" "Catalog:$CATALOG_UP:$CATALOG_DOWN" "Availability booked cancellation:$AVAILABILITY_CANCELLATION_UP:$AVAILABILITY_CANCELLATION_DOWN" "Availability outbox publisher:$AVAILABILITY_OUTBOX_UP:$AVAILABILITY_OUTBOX_DOWN" "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Booking cancellation workflow:$BOOKING_CANCELLATION_UP:$BOOKING_CANCELLATION_DOWN" "Booking outbox publisher:$BOOKING_OUTBOX_UP:$BOOKING_OUTBOX_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN" "Payment refunds:$PAYMENT_REFUND_UP:$PAYMENT_REFUND_DOWN"; do
+for pair in "Auth:$AUTH_UP:$AUTH_DOWN" "Catalog:$CATALOG_UP:$CATALOG_DOWN" "Availability booked cancellation:$AVAILABILITY_CANCELLATION_UP:$AVAILABILITY_CANCELLATION_DOWN" "Availability outbox publisher:$AVAILABILITY_OUTBOX_UP:$AVAILABILITY_OUTBOX_DOWN" "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Booking cancellation workflow:$BOOKING_CANCELLATION_UP:$BOOKING_CANCELLATION_DOWN" "Booking outbox publisher:$BOOKING_OUTBOX_UP:$BOOKING_OUTBOX_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN" "Payment refunds:$PAYMENT_REFUND_UP:$PAYMENT_REFUND_DOWN" "Notification:$NOTIFICATION_UP:$NOTIFICATION_DOWN"; do
   name="${pair%%:*}"; rest="${pair#*:}"; up="${rest%%:*}"; down="${rest#*:}"
   if [ -f "$up" ] || [ -f "$down" ]; then [ -f "$up" ] && [ -f "$down" ] || { echo "Incomplete $name migration pair" >&2; exit 1; }; fi
 done
@@ -71,6 +73,7 @@ export AVAILABILITY_TEST_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PA
 export BOOKING_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
 export PRICING_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
 export PAYMENT_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
+export NOTIFICATION_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
 
 echo "Applying Availability migration"; psql_in_postgres < "$AVAILABILITY_UP"
 echo "Applying Availability booked-cancellation migration"; psql_in_postgres < "$AVAILABILITY_CANCELLATION_UP"
@@ -144,4 +147,13 @@ if [ -f "$PAYMENT_UP" ]; then
   payment_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('payments','payment_attempts','payment_reconciliations','refunds','refund_attempts');")"
   [ "$payment_remaining" = "0" ] || { echo "Payment rollback left $payment_remaining tables" >&2; exit 1; }
   echo "Payment migration and repository integration validation passed."
+fi
+
+if [ -f "$NOTIFICATION_UP" ]; then
+  echo "Applying Notification migration"; psql_in_postgres < "$NOTIFICATION_UP"
+  echo "Running Notification deduplication integration tests"; go test -count=1 -tags=integration ./services/notification/internal/infrastructure/postgres -run '^TestIntegration'
+  echo "Rolling back Notification migration"; psql_in_postgres < "$NOTIFICATION_DOWN"
+  notification_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('notification_processed_events','notification_jobs');")"
+  [ "$notification_remaining" = "0" ] || { echo "Notification rollback left $notification_remaining tables" >&2; exit 1; }
+  echo "Notification migration and deduplication validation passed."
 fi
