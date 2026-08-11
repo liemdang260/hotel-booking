@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"errors"
 	"strings"
 	"time"
@@ -59,4 +61,4 @@ func(s *Service)Refresh(ctx context.Context,plain string)(Tokens,error){
 func(s *Service)Logout(ctx context.Context,plain string)error{
 	hash:=HashOpaqueToken(plain);r,err:=s.sessions.FindByHash(ctx,hash);if err!=nil{return nil};return s.sessions.Revoke(ctx,r.ID,s.now().UTC())
 }
-func HashOpaqueToken(plain string)string{return hashOpaqueToken(plain)}
+func HashOpaqueToken(plain string)string{sum:=sha256.Sum256([]byte(plain));return fmt.Sprintf("%x",sum[:])}
