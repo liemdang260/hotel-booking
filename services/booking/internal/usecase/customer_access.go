@@ -17,6 +17,7 @@ var (
 type CustomerPrincipal struct {
 	UserID string
 	Roles []string
+	SubjectType string
 }
 
 type CustomerBookingReader interface {
@@ -95,7 +96,7 @@ func (u *CustomerAccess) Cancel(ctx context.Context, actor CustomerPrincipal, in
 }
 
 func validActor(actor CustomerPrincipal) bool {
-	return !invalidValue(actor.UserID, 128)
+	return actor.SubjectType == "USER" && !invalidValue(actor.UserID, 128)
 }
 
 func invalidValue(value string, maximum int) bool {
