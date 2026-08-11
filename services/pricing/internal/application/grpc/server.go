@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	pricingv1 "github.com/liemdang260/hotel-booking/gen/pricing/v1"
+	pricingv1 "github.com/liemdang260/hotel-booking/gen/go/pricing/v1"
 	"github.com/liemdang260/hotel-booking/services/pricing/internal/domain"
 	"github.com/liemdang260/hotel-booking/services/pricing/internal/repository"
 	"github.com/liemdang260/hotel-booking/services/pricing/internal/usecase"
