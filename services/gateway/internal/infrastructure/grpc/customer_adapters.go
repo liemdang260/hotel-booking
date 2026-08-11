@@ -72,7 +72,6 @@ func (a *CustomerBookingAdapter) CreateBooking(ctx context.Context, input domain
 func (a *CustomerBookingAdapter) GetBooking(ctx context.Context, input domain.GetBookingInput) (domain.Booking, error) {
 	response, err := a.client.GetBooking(ctx, &bookingv1.GetBookingRequest{
 		Actor: mapPrincipal(input.Actor),
-		CallingService: gatewayServiceIdentity,
 		BookingId: input.BookingID,
 	})
 	if err != nil {
@@ -84,7 +83,6 @@ func (a *CustomerBookingAdapter) GetBooking(ctx context.Context, input domain.Ge
 func (a *CustomerBookingAdapter) ListBookings(ctx context.Context, input domain.ListBookingsInput) (domain.BookingPage, error) {
 	response, err := a.client.ListBookings(ctx, &bookingv1.ListBookingsRequest{
 		Actor: mapPrincipal(input.Actor),
-		CallingService: gatewayServiceIdentity,
 		PageSize: input.PageSize,
 		PageToken: input.PageToken,
 	})
@@ -108,7 +106,6 @@ func (a *CustomerBookingAdapter) ListBookings(ctx context.Context, input domain.
 func (a *CustomerBookingAdapter) CancelBooking(ctx context.Context, input domain.CancelBookingInput) (domain.CancellationResult, error) {
 	response, err := a.client.CancelBooking(ctx, &bookingv1.CancelBookingRequest{
 		Actor: mapPrincipal(input.Actor),
-		CallingService: gatewayServiceIdentity,
 		BookingId: input.BookingID,
 		IdempotencyKey: input.IdempotencyKey,
 		Reason: input.Reason,
