@@ -17,24 +17,21 @@ func (p *Persistence) CreateAttempt(
 	ctx context.Context,
 	booking *domain.Booking,
 	snapshot *domain.PriceSnapshot,
+	cancellation *domain.CancellationPolicySnapshot,
 	saga *domain.BookingSaga,
 	idempotency *domain.IdempotencyRecord,
 	event *domain.OutboxEvent,
-	cancellation ...*domain.CancellationPolicySnapshot,
 ) error {
 	if err:=booking.Validate();err!=nil{return err}
 	if err:=snapshot.Validate();err!=nil{return err}
-	var policy *domain.CancellationPolicySnapshot
-	if len(cancellation)>0 {
-		policy=cancellation[0]
-		if policy==nil{return domain.ErrInvalidPriceSnapshot}
-		if err:=policy.Validate();err!=nil{return err}
-		if policy.BookingID!=booking.ID{return fmt.Errorf("cancellation snapshot booking mismatch")}
-	}
+	if cancellation==nil{return domain.ErrInvalidPriceSnapshot}
+	if err:=cancellation.Validate();err!=nil{return err}
+	if cancellation.BookingID!=booking.ID{return fmt.Errorf("cancellation snapshot booking mismatch")}
+	if snapshot.BookingID!=booking.ID{return fmt.Errorf("price snapshot booking mismatch")}
 	return p.transactions.WithinTransaction(ctx,func(txctx context.Context,r domain.Repositories)error{
 		if err:=r.Bookings.Create(txctx,booking);err!=nil{return fmt.Errorf("create booking: %w",err)}
 		if err:=r.PriceSnapshots.Create(txctx,snapshot);err!=nil{return fmt.Errorf("snapshot accepted quote: %w",err)}
-		if policy!=nil { if err:=r.PriceSnapshots.CreateCancellationPolicy(txctx,policy);err!=nil{return fmt.Errorf("snapshot accepted cancellation policy: %w",err)} }
+		if err:=r.PriceSnapshots.CreateCancellationPolicy(txctx,cancellation);err!=nil{return fmt.Errorf("snapshot accepted cancellation policy: %w",err)}
 		if err:=r.Sagas.Create(txctx,saga);err!=nil{return fmt.Errorf("create saga: %w",err)}
 		if err:=r.Idempotency.Claim(txctx,idempotency);err!=nil{return fmt.Errorf("claim idempotency key: %w",err)}
 		if err:=r.Outbox.Add(txctx,event);err!=nil{return fmt.Errorf("append outbox event: %w",err)}
