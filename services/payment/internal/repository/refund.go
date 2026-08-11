@@ -11,7 +11,12 @@ import (
 var (
 	ErrRefundNotFound            = errors.New("refund not found")
 	ErrRefundIdempotencyConflict = errors.New("refund idempotency conflict")
+	ErrRefundPaymentConflict     = errors.New("refund payment conflict")
 )
+
+type PaymentReader interface {
+	GetByID(context.Context, string) (domain.Payment, error)
+}
 
 type RefundRepository interface {
 	Create(context.Context, domain.Refund) (domain.Refund, error)
