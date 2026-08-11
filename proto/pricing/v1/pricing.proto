@@ -7,6 +7,7 @@ option go_package = "github.com/liemdang260/hotel-booking/gen/pricing/v1;pricing
 service PricingService {
   rpc Quote(QuoteRequest) returns (QuoteResponse);
   rpc GetQuote(GetQuoteRequest) returns (GetQuoteResponse);
+  rpc BatchEstimate(BatchEstimateRequest) returns (BatchEstimateResponse);
 }
 
 message Date {
@@ -25,6 +26,31 @@ message QuoteRequest {
 }
 
 message GetQuoteRequest { string quote_id = 1; }
+
+message EstimateItem {
+  string hotel_id = 1;
+  string room_type_id = 2;
+  Date check_in = 3;
+  Date check_out = 4;
+  int32 guest_count = 5;
+  int32 room_quantity = 6;
+}
+
+message BatchEstimateRequest {
+  repeated EstimateItem items = 1;
+}
+
+message EstimateValue {
+  string hotel_id = 1;
+  string room_type_id = 2;
+  int64 total_minor = 3;
+  string currency = 4;
+  string pricing_version = 5;
+}
+
+message BatchEstimateResponse {
+  repeated EstimateValue estimates = 1;
+}
 
 message CancellationPolicyValue {
   string policy_code = 1;
