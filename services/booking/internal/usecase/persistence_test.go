@@ -47,6 +47,7 @@ func (r *outboxRepository) Add(context.Context, *domain.OutboxEvent) error { r.a
 type priceRepository struct{}
 
 func (priceRepository) Create(context.Context, *domain.PriceSnapshot) error { return nil }
+func (priceRepository) CreateCancellationPolicy(context.Context, *domain.CancellationPolicySnapshot) error { return nil }
 func (priceRepository) FindByBookingID(context.Context, string) (*domain.PriceSnapshot, error) {
 	return nil, domain.ErrNotFound
 }
