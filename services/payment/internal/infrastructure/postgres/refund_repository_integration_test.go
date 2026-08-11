@@ -97,3 +97,34 @@ func TestIntegrationRefundConfirmedProviderFailureIsDurable(t *testing.T) {
 		t.Fatalf("declined attempts=%d, want 1", attempts)
 	}
 }
+
+
+func TestIntegrationRefundCannotExceedSuccessfulPayment(t *testing.T) {
+	db := openPaymentIntegrationDB(t)
+	resetPaymentFixture(t, db)
+	payments := NewPaymentRepository(db)
+	payment := newIntegrationPayment(t, "payment-limit", "booking-limit", "payment-key-limit")
+	payment.Status = domain.StatusSucceeded
+	if _, err := payments.Create(context.Background(), payment); err != nil {
+		t.Fatal(err)
+	}
+	create := usecase.NewCreateRefund(
+		NewRefundRepository(db), payments,
+		integrationRefundProvider{result: provider.RefundResult{Outcome: domain.AttemptSucceeded}},
+		&integrationRefundIDs{}, integrationRefundClock{now: payment.CreatedAt.Add(time.Minute)},
+	)
+	_, err := create.Execute(context.Background(), usecase.CreateRefundInput{
+		PaymentID: payment.ID, BookingID: payment.BookingID, IdempotencyKey: "refund-key-limit",
+		AmountMinor: payment.AmountMinor + 1, Currency: payment.Currency,
+	})
+	if !errors.Is(err, repository.ErrRefundPaymentConflict) {
+		t.Fatalf("err=%v, want refund payment conflict", err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM refunds`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("refund rows=%d, want 0", count)
+	}
+}
