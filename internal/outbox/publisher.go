@@ -22,6 +22,7 @@ type Event struct {
 	CausationID      string
 	OccurredAt       time.Time
 	ClaimToken       string
+	Attempt          int
 }
 
 type ClaimRequest struct {
@@ -106,7 +107,7 @@ func (u *PublishBatch) ExecuteBatch(ctx context.Context, requested int) (Result,
 			continue
 		}
 		if err := u.publisher.Publish(ctx, event); err != nil {
-			retryAt := u.clock.Now().UTC().Add(u.config.Backoff(1))
+			retryAt := u.clock.Now().UTC().Add(u.config.Backoff(event.Attempt + 1))
 			if retryErr := u.repository.MarkRetry(ctx, event.ID, token, retryAt, err.Error()); retryErr != nil {
 				failures = append(failures, fmt.Errorf("outbox event %s: publish: %v; record retry: %w", event.ID, err, retryErr))
 			} else {

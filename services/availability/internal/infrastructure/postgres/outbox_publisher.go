@@ -26,14 +26,14 @@ UPDATE availability_outbox_events AS event
 SET status='PUBLISHING',claim_token=$3::uuid,claimed_at=$1,locked_until=$4,last_error=NULL
 FROM ready WHERE event.id=ready.id
 RETURNING event.id::text,event.aggregate_type,event.aggregate_id::text,event.aggregate_version,event.event_type,
-          1,event.payload,event.created_at,$3::text`,
+          1,event.payload,event.attempt_count,event.created_at,$3::text`,
 		request.Now,request.Limit,request.ClaimToken,request.LeaseUntil)
 	if err!=nil{return nil,fmt.Errorf("claim availability outbox: %w",err)}
 	defer rows.Close()
 	var events []outbox.Event
 	for rows.Next(){
 		var event outbox.Event
-		if err:=rows.Scan(&event.ID,&event.AggregateType,&event.AggregateID,&event.AggregateVersion,&event.EventType,&event.EventVersion,&event.Payload,&event.OccurredAt,&event.ClaimToken);err!=nil{return nil,fmt.Errorf("scan availability outbox: %w",err)}
+		if err:=rows.Scan(&event.ID,&event.AggregateType,&event.AggregateID,&event.AggregateVersion,&event.EventType,&event.EventVersion,&event.Payload,&event.Attempt,&event.OccurredAt,&event.ClaimToken);err!=nil{return nil,fmt.Errorf("scan availability outbox: %w",err)}
 		events=append(events,event)
 	}
 	if err:=rows.Err();err!=nil{return nil,fmt.Errorf("iterate availability outbox: %w",err)}

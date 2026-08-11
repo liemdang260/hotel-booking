@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/liemdang260/hotel-booking/internal/outbox"
 )
@@ -47,7 +48,7 @@ func(p *Publisher)Publish(ctx context.Context,event outbox.Event)error{
 		AggregateType string `json:"aggregate_type"`
 		AggregateID string `json:"aggregate_id"`
 		AggregateVersion int64 `json:"aggregate_version,omitempty"`
-		OccurredAt any `json:"occurred_at"`
+		OccurredAt time.Time `json:"occurred_at"`
 		CorrelationID string `json:"correlation_id,omitempty"`
 		CausationID string `json:"causation_id,omitempty"`
 		Payload json.RawMessage `json:"payload"`
