@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package hotelbooking.smoke.v1;
+
+option go_package = "github.com/liemdang260/hotel-booking/gen/go/hotelbooking/smoke/v1;smokev1";
+
+service SmokeService {
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+message PingRequest {
+  string request_id = 1;
+}
+
+message PingResponse {
+  string message = 1;
+}
