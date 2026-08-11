@@ -30,6 +30,8 @@ BOOKING_UP="services/booking/migrations/000001_create_booking_schema.up.sql"
 BOOKING_DOWN="services/booking/migrations/000001_create_booking_schema.down.sql"
 BOOKING_POLICY_UP="services/booking/migrations/000002_create_cancellation_policy_snapshots.up.sql"
 BOOKING_POLICY_DOWN="services/booking/migrations/000002_create_cancellation_policy_snapshots.down.sql"
+BOOKING_CANCELLATION_UP="services/booking/migrations/000003_create_booking_cancellations.up.sql"
+BOOKING_CANCELLATION_DOWN="services/booking/migrations/000003_create_booking_cancellations.down.sql"
 PRICING_UP="services/pricing/migrations/000001_create_quotes.up.sql"
 PRICING_DOWN="services/pricing/migrations/000001_create_quotes.down.sql"
 PRICING_POLICY_UP="services/pricing/migrations/000002_add_cancellation_policy.up.sql"
@@ -42,11 +44,12 @@ PAYMENT_REFUND_UP="services/payment/migrations/000003_create_refunds.up.sql"
 PAYMENT_REFUND_DOWN="services/payment/migrations/000003_create_refunds.down.sql"
 
 for file in "$AVAILABILITY_UP" "$AVAILABILITY_VERIFY" "$AVAILABILITY_DOWN"; do [ -f "$file" ] || { echo "Missing migration test input: $file" >&2; exit 1; }; done
-for pair in "Availability booked cancellation:$AVAILABILITY_CANCELLATION_UP:$AVAILABILITY_CANCELLATION_DOWN" "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN" "Payment refunds:$PAYMENT_REFUND_UP:$PAYMENT_REFUND_DOWN"; do
+for pair in "Availability booked cancellation:$AVAILABILITY_CANCELLATION_UP:$AVAILABILITY_CANCELLATION_DOWN" "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Booking cancellation workflow:$BOOKING_CANCELLATION_UP:$BOOKING_CANCELLATION_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN" "Payment refunds:$PAYMENT_REFUND_UP:$PAYMENT_REFUND_DOWN"; do
   name="${pair%%:*}"; rest="${pair#*:}"; up="${rest%%:*}"; down="${rest#*:}"
   if [ -f "$up" ] || [ -f "$down" ]; then [ -f "$up" ] && [ -f "$down" ] || { echo "Incomplete $name migration pair" >&2; exit 1; }; fi
 done
 [ ! -f "$BOOKING_POLICY_UP" ] || [ -f "$BOOKING_UP" ] || { echo "Booking policy migration requires base Booking migration" >&2; exit 1; }
+[ ! -f "$BOOKING_CANCELLATION_UP" ] || [ -f "$BOOKING_POLICY_UP" ] || { echo "Booking cancellation workflow requires policy snapshot migration" >&2; exit 1; }
 [ ! -f "$PRICING_POLICY_UP" ] || [ -f "$PRICING_UP" ] || { echo "Pricing policy migration requires base Pricing migration" >&2; exit 1; }
 [ ! -f "$PAYMENT_RECON_UP" ] || [ -f "$PAYMENT_UP" ] || { echo "Payment reconciliation migration requires base Payment migration" >&2; exit 1; }
 [ ! -f "$PAYMENT_REFUND_UP" ] || [ -f "$PAYMENT_UP" ] || { echo "Payment refund migration requires base Payment migration" >&2; exit 1; }
@@ -75,10 +78,12 @@ echo "Availability integration validation passed."
 if [ -f "$BOOKING_UP" ]; then
   echo "Applying Booking migration"; psql_in_postgres < "$BOOKING_UP"
   if [ -f "$BOOKING_POLICY_UP" ]; then echo "Applying Booking cancellation policy migration"; psql_in_postgres < "$BOOKING_POLICY_UP"; fi
+  if [ -f "$BOOKING_CANCELLATION_UP" ]; then echo "Applying Booking cancellation workflow migration"; psql_in_postgres < "$BOOKING_CANCELLATION_UP"; fi
   echo "Running Booking repository and transaction integration tests"; go test -count=1 -tags=integration ./services/booking/internal/infrastructure/postgres -run '^TestIntegration'
+  if [ -f "$BOOKING_CANCELLATION_DOWN" ]; then echo "Rolling back Booking cancellation workflow migration"; psql_in_postgres < "$BOOKING_CANCELLATION_DOWN"; fi
   if [ -f "$BOOKING_POLICY_DOWN" ]; then echo "Rolling back Booking cancellation policy migration"; psql_in_postgres < "$BOOKING_POLICY_DOWN"; fi
   echo "Rolling back Booking migration"; psql_in_postgres < "$BOOKING_DOWN"
-  booking_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('bookings','booking_price_snapshots','booking_cancellation_policies','booking_sagas','booking_idempotency','booking_outbox_events');")"
+  booking_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('bookings','booking_price_snapshots','booking_cancellation_policies','booking_cancellations','booking_sagas','booking_idempotency','booking_outbox_events');")"
   booking_functions="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='reject_booking_cancellation_policy_update';")"
   [ "$booking_remaining" = "0" ] && [ "$booking_functions" = "0" ] || { echo "Booking rollback left tables=$booking_remaining functions=$booking_functions" >&2; exit 1; }
   echo "Booking migration and repository integration validation passed."
