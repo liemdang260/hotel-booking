@@ -21,6 +21,8 @@ cleanup(){ compose down -v --remove-orphans >/dev/null 2>&1 || true; }
 trap cleanup EXIT INT TERM
 psql_in_postgres(){ compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 "$@"; }
 
+AUTH_UP="services/auth/migrations/000001_create_auth_schema.up.sql"
+AUTH_DOWN="services/auth/migrations/000001_create_auth_schema.down.sql"
 AVAILABILITY_UP="services/availability/migrations/000001_create_availability_schema.up.sql"
 AVAILABILITY_VERIFY="services/availability/migrations/000001_create_availability_schema_test.sql"
 AVAILABILITY_DOWN="services/availability/migrations/000001_create_availability_schema.down.sql"
@@ -44,7 +46,7 @@ PAYMENT_REFUND_UP="services/payment/migrations/000003_create_refunds.up.sql"
 PAYMENT_REFUND_DOWN="services/payment/migrations/000003_create_refunds.down.sql"
 
 for file in "$AVAILABILITY_UP" "$AVAILABILITY_VERIFY" "$AVAILABILITY_DOWN"; do [ -f "$file" ] || { echo "Missing migration test input: $file" >&2; exit 1; }; done
-for pair in "Availability booked cancellation:$AVAILABILITY_CANCELLATION_UP:$AVAILABILITY_CANCELLATION_DOWN" "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Booking cancellation workflow:$BOOKING_CANCELLATION_UP:$BOOKING_CANCELLATION_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN" "Payment refunds:$PAYMENT_REFUND_UP:$PAYMENT_REFUND_DOWN"; do
+for pair in "Auth:$AUTH_UP:$AUTH_DOWN" "Availability booked cancellation:$AVAILABILITY_CANCELLATION_UP:$AVAILABILITY_CANCELLATION_DOWN" "Booking:$BOOKING_UP:$BOOKING_DOWN" "Booking cancellation policy:$BOOKING_POLICY_UP:$BOOKING_POLICY_DOWN" "Booking cancellation workflow:$BOOKING_CANCELLATION_UP:$BOOKING_CANCELLATION_DOWN" "Pricing:$PRICING_UP:$PRICING_DOWN" "Pricing cancellation policy:$PRICING_POLICY_UP:$PRICING_POLICY_DOWN" "Payment:$PAYMENT_UP:$PAYMENT_DOWN" "Payment reconciliation:$PAYMENT_RECON_UP:$PAYMENT_RECON_DOWN" "Payment refunds:$PAYMENT_REFUND_UP:$PAYMENT_REFUND_DOWN"; do
   name="${pair%%:*}"; rest="${pair#*:}"; up="${rest%%:*}"; down="${rest#*:}"
   if [ -f "$up" ] || [ -f "$down" ]; then [ -f "$up" ] && [ -f "$down" ] || { echo "Incomplete $name migration pair" >&2; exit 1; }; fi
 done
@@ -57,6 +59,7 @@ done
 echo "Starting PostgreSQL only for integration validation"
 compose up -d --wait postgres
 compose ps postgres
+export AUTH_TEST_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
 export AVAILABILITY_TEST_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
 export BOOKING_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
 export PRICING_TEST_DATABASE_URL="$AVAILABILITY_TEST_DATABASE_URL"
@@ -74,6 +77,15 @@ availability_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class 
 [ "$availability_remaining" = "0" ] || { echo "Availability rollback left $availability_remaining tables" >&2; exit 1; }
 
 echo "Availability integration validation passed."
+
+if [ -f "$AUTH_UP" ]; then
+  echo "Applying Auth migration"; psql_in_postgres < "$AUTH_UP"
+  if [ -d services/auth/internal/infrastructure/postgres ]; then echo "Running Auth repository integration tests"; go test -count=1 -tags=integration ./services/auth/internal/infrastructure/postgres -run '^TestIntegration'; fi
+  echo "Rolling back Auth migration"; psql_in_postgres < "$AUTH_DOWN"
+  auth_remaining="$(psql_in_postgres -Atqc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('auth_users','auth_refresh_tokens');")"
+  [ "$auth_remaining" = "0" ] || { echo "Auth rollback left $auth_remaining tables" >&2; exit 1; }
+  echo "Auth migration validation passed."
+fi
 
 if [ -f "$BOOKING_UP" ]; then
   echo "Applying Booking migration"; psql_in_postgres < "$BOOKING_UP"
