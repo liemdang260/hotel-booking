@@ -65,9 +65,20 @@ VALUES($1,$2,$3,$4,$5,$6,'PENDING',$7)`,event.ID,event.AggregateType,event.Aggre
 func(s *CancellationStore)MarkRefund(ctx context.Context,id string,v int64,r usecase.CancellationRefund)(domain.BookingCancellation,error){
 	state:=domain.CancellationRefundProcessing
 	if r.Status==usecase.RefundUnknown{state=domain.CancellationRefundUnknown}
-	if r.Status==usecase.RefundSucceeded{state=domain.CancellationCompleted}
-	row:=s.db.QueryRowContext(ctx,`UPDATE booking_cancellations SET state=$3,refund_id=NULLIF($4,''),completed_at=CASE WHEN $3='COMPLETED' THEN now() ELSE completed_at END,version=version+1,updated_at=now() WHERE id=$1 AND version=$2 RETURNING `+cancellationColumns,id,v,state,r.ID)
-	c,err:=scanCancellation(row);if errors.Is(err,sql.ErrNoRows){return c,domain.ErrConcurrentWrite};return c,err
+	if r.Status!=usecase.RefundSucceeded{
+		row:=s.db.QueryRowContext(ctx,`UPDATE booking_cancellations SET state=$3,refund_id=NULLIF($4,''),version=version+1,updated_at=now() WHERE id=$1 AND version=$2 RETURNING `+cancellationColumns,id,v,state,r.ID)
+		c,err:=scanCancellation(row);if errors.Is(err,sql.ErrNoRows){return c,domain.ErrConcurrentWrite};return c,err
+	}
+	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return domain.BookingCancellation{},err};defer func(){_=tx.Rollback()}()
+	c,err:=scanCancellation(tx.QueryRowContext(ctx,`UPDATE booking_cancellations SET state='COMPLETED',refund_id=$3,completed_at=now(),version=version+1,updated_at=now() WHERE id=$1 AND version=$2 RETURNING `+cancellationColumns,id,v,r.ID))
+	if errors.Is(err,sql.ErrNoRows){return c,domain.ErrConcurrentWrite};if err!=nil{return c,err}
+	var b domain.Booking
+	if err=tx.QueryRowContext(ctx,`SELECT id::text,user_id,version,updated_at FROM bookings WHERE id=$1`,c.BookingID).Scan(&b.ID,&b.UserID,&b.Version,&b.UpdatedAt);err!=nil{return c,err}
+	var eventID string;if err=tx.QueryRowContext(ctx,"SELECT gen_random_uuid()::text").Scan(&eventID);err!=nil{return c,err}
+	event,err:=domain.NewRefundCompletedEvent(eventID,b,c,c.UpdatedAt);if err!=nil{return c,err}
+	_,err=tx.ExecContext(ctx,`INSERT INTO booking_outbox_events(id,aggregate_type,aggregate_id,event_type,event_version,payload,status,created_at)
+VALUES($1,$2,$3,$4,$5,$6,'PENDING',$7)`,event.ID,event.AggregateType,event.AggregateID,event.EventType,event.EventVersion,event.Payload,event.CreatedAt)
+	if err!=nil{return c,err};if err=tx.Commit();err!=nil{return c,err};return c,nil
 }
 func(s *CancellationStore)CompleteWithoutRefund(ctx context.Context,id string,v int64)(domain.BookingCancellation,error){
 	return s.transition(ctx,id,v,domain.CancellationCompleted,"")
