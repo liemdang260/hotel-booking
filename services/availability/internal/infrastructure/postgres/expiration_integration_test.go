@@ -46,12 +46,15 @@ func resetExpirationFixture(t *testing.T, now time.Time) {
 	db := openIntegrationDB(t)
 	resetInventoryFixture(t, db)
 
-	_, err := db.Exec(`
+	if _, err := db.Exec(`
 UPDATE room_inventory
 SET held_quantity = 2
 WHERE hotel_id = '00000000-0000-0000-0000-000000000101'
-  AND room_type_id = '00000000-0000-0000-0000-000000000102';
+  AND room_type_id = '00000000-0000-0000-0000-000000000102'`); err != nil {
+		t.Fatalf("set held inventory fixture: %v", err)
+	}
 
+	if _, err := db.Exec(`
 INSERT INTO reservations (
     id, booking_id, hotel_id, room_type_id,
     check_in, check_out, quantity, status, expires_at,
@@ -63,13 +66,15 @@ INSERT INTO reservations (
     '00000000-0000-0000-0000-000000000102',
     DATE '2026-09-01', DATE '2026-09-03', 2, 'HELD', $1,
     $2, $2
-);
+)`, now.Add(-time.Minute), now.Add(-time.Hour)); err != nil {
+		t.Fatalf("insert expiration reservation fixture: %v", err)
+	}
 
+	if _, err := db.Exec(`
 INSERT INTO reservation_inventory (reservation_id, inventory_date, quantity) VALUES
 ('00000000-0000-0000-0000-000000000201', DATE '2026-09-01', 2),
-('00000000-0000-0000-0000-000000000201', DATE '2026-09-02', 2);`, now.Add(-time.Minute), now.Add(-time.Hour))
-	if err != nil {
-		t.Fatalf("reset expiration fixture: %v", err)
+('00000000-0000-0000-0000-000000000201', DATE '2026-09-02', 2)`); err != nil {
+		t.Fatalf("insert reservation inventory fixture: %v", err)
 	}
 }
 
