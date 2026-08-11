@@ -47,7 +47,7 @@ func(s *CancellationStore)MarkReservationCancelling(ctx context.Context,id strin
 	return s.transition(ctx,id,v,domain.CancellationCancellingReservation,"")
 }
 func(s *CancellationStore)MarkBookingCancelled(ctx context.Context,id string,v int64)(domain.BookingCancellation,error){
-	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return domain.BookingCancellation{},err};defer tx.Rollback()
+	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return domain.BookingCancellation{},err};defer func(){ _=tx.Rollback() }()
 	c,err:=scanCancellation(tx.QueryRowContext(ctx,`UPDATE booking_cancellations SET state='RESERVATION_CANCELLED',version=version+1,updated_at=now()
 WHERE id=$1 AND version=$2 AND state='CANCELLING_RESERVATION' RETURNING `+cancellationColumns,id,v))
 	if errors.Is(err,sql.ErrNoRows){return c,domain.ErrConcurrentWrite};if err!=nil{return c,err}
